@@ -699,6 +699,35 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                             </div>
                                         </div>
 
+                                        {/* WITHDRAWAL RULES INSERTED HERE */}
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-8">
+                                            <h4 className="text-blue-900 font-bold text-sm mb-3 flex items-center gap-2">
+                                                <Info className="w-4 h-4"/> WITHDRAWAL RULES
+                                            </h4>
+                                            <ul className="space-y-2 text-xs text-blue-800 font-medium">
+                                                <li className="flex items-start gap-2">
+                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span> 
+                                                    Only once withdrawal per day.
+                                                </li>
+                                                <li className="flex items-start gap-2">
+                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span> 
+                                                    Process 24-48 hours.
+                                                </li>
+                                                <li className="flex items-start gap-2">
+                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span> 
+                                                    Too many requests will ban the account.
+                                                </li>
+                                                <li className="flex items-start gap-2">
+                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span> 
+                                                    Wait until 48 hours before ask for support.
+                                                </li>
+                                                <li className="flex items-start gap-2">
+                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span> 
+                                                    Minimum withdrawal is RM50.
+                                                </li>
+                                            </ul>
+                                        </div>
+
                                         <form onSubmit={handleRequestPayout} className="space-y-8">
                                             <div className="bg-gray-50 p-4 md:p-6 rounded-2xl border border-gray-100 space-y-4 md:space-y-6">
                                                 <div>

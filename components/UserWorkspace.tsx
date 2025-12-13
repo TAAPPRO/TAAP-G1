@@ -39,6 +39,7 @@ const Tooltip = ({ text, children, className = "" }: { text: string, children?: 
 export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initialCredits, config: initialConfig, onLogout, onShowAbout }) => {
   const [credits, setCredits] = useState(initialCredits);
   const [userPlan, setUserPlan] = useState<string>('Starter');
+  const [userName, setUserName] = useState<string>('User'); // Added state for User Name
   const [planMaxCredits, setPlanMaxCredits] = useState(200); // Default fallback
   const [dynamicConfig, setDynamicConfig] = useState(initialConfig);
   const [proPackageId, setProPackageId] = useState<number | null>(null);
@@ -100,11 +101,12 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
             if (!isMountedRef.current) return;
             try {
                 // 1. Fetch User Data
-                const { data: userData } = await supabase.from('licenses').select('credits, plan_type, status').eq('license_key', licenseKey).single();
+                const { data: userData } = await supabase.from('licenses').select('credits, plan_type, status, user_name').eq('license_key', licenseKey).single();
                 if(userData && isMountedRef.current) {
                     if(userData.status !== 'active') { onLogout(); return; }
                     setCredits(userData.credits);
                     setUserPlan(userData.plan_type || 'Starter');
+                    setUserName(userData.user_name || 'User');
                     
                     // 2. Fetch Package Max Credits Dynamically
                     if (userData.plan_type) {
@@ -154,6 +156,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
         return () => clearInterval(interval);
     } else {
         setUserPlan('TAAP PRO');
+        setUserName('Developer');
         setPlanMaxCredits(10000);
     }
   }, [licenseKey, onLogout]);
@@ -299,7 +302,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                         <Shield className="w-6 h-6 md:w-7 md:h-7 text-white" />
                    </div>
                    <div className="flex flex-col">
-                       <span className="text-[9px] text-orange-100 uppercase font-bold tracking-widest opacity-80">Current Plan</span>
+                       <span className="text-[9px] text-orange-100 uppercase font-bold tracking-widest opacity-80">Welcome, {userName}</span>
                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-xs font-bold ${isPro ? 'bg-purple-600 text-white border-purple-300' : 'bg-blue-600 text-white border-blue-400'}`}>
                            {isPro ? <Crown className="w-3 h-3 text-yellow-300" /> : <User className="w-3 h-3" />} {userPlan}
                        </div>
@@ -410,10 +413,12 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                 <button 
                     onClick={() => handleRequestAutofill()} 
                     disabled={!magicInput.trim()}
-                    className="w-full max-w-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-500/30 mt-6 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-1 active:scale-95"
+                    className="w-full max-w-lg bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-lg py-4 rounded-xl shadow-lg hover:shadow-orange-500/30 mt-6 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed transform hover:-translate-y-1 active:scale-95"
                 >
                     {isMagicFilling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    Generate Details <span className="opacity-80 ml-1 text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1"><Zap className="w-3 h-3 fill-current text-yellow-300" /> Neural Energy</span>
+                    {isMagicFilling ? "Generating Details..." : (
+                        <span className="flex items-center gap-1">TAAP-NOW (Generate) <span className="opacity-80 ml-1 text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1"><Zap className="w-3 h-3 fill-current text-yellow-300" /> Neural Energy</span></span>
+                    )}
                 </button>
             </div>
           )}
@@ -516,9 +521,9 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                             <button 
                                 onClick={() => handleRequestGenerate()} 
                                 disabled={!featureFlags.enable_text}
-                                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 hover:scale-[1.02] ${featureFlags.enable_text ? 'bg-orange-600 hover:bg-orange-700 text-white hover:shadow-orange-500/30' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 hover:scale-[1.02] ${featureFlags.enable_text ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white hover:shadow-orange-500/30' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                             >
-                                {featureFlags.enable_text ? <><Sparkles className="w-5 h-5 fill-white animate-pulse" /> TAAP NOW (Generate)</> : <><Construction className="w-5 h-5"/> System Maintenance</>}
+                                {featureFlags.enable_text ? <><Sparkles className="w-5 h-5 fill-white animate-pulse" /> TAAP-NOW (Generate)</> : <><Construction className="w-5 h-5"/> System Maintenance</>}
                             </button>
                         )}
                     </div>
