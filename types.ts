@@ -179,12 +179,18 @@ export enum Tone {
   ABANG_VIBE = "Abang Vibe (Macam Brader)",
   PROFESSIONAL = "Profesional & Korporat",
   HARD_SELL = "Gempak & Hard Sell",
+  SOFT_SELL = "Soft Sell & Manja (Pujuk)",
   STORYTELLING = "Emosi & Storytelling",
   URGENT = "Cemas & Urgent (FOMO)",
   EDUCATIONAL = "Informatif & Cikgu",
   FUNNY = "Kelakar & Santai",
   LUXURY = "Mewah & Eksklusif",
-  REMPIT = "Rempit & Sempoi"
+  REMPIT = "Rempit & Sempoi",
+  ISLAMIC = "Islam & Sopan (Patuh Syariah)",
+  MOTIVATIONAL = "Semangat & Inspirasi",
+  PARENTING = "Mak-Mak & Prihatin",
+  FOODIE = "Foodie & Terliur",
+  TECH_GEEK = "Tech & Gajet (Geeky)"
 }
 
 export enum ContentFormat {
@@ -202,8 +208,15 @@ export enum ContentFormat {
 }
 
 export enum Language {
-  MALAY = "Bahasa Melayu (Standard)",
-  ENGLISH = "English (International)",
-  ROJAK = "Bahasa Rojak (Manglish/Casual)",
-  INDONESIA = "Bahasa Indonesia"
+  MALAY_CASUAL = "Bahasa Melayu (Santai/Harian)",
+  MALAY_ROJAK = "Bahasa Rojak (Manglish/Campur)",
+  MALAY_GEN_Z = "Bahasa Gen Z (Slang/Viral)",
+  MALAY_BAKU = "Bahasa Melayu (Baku/Formal)",
+  MALAY_UTARA = "Loghat Utara (Kedah/Penang)",
+  MALAY_KELATE = "Loghat Kelate/Ganu (Pantai Timur)",
+  ENGLISH_PRO = "English (Professional)",
+  ENGLISH_CASUAL = "English (Malaysian/Casual)",
+  INDONESIA = "Bahasa Indonesia (Gaul/Jakarta)",
+  MANDARIN_MY = "Mandarin (Malaysian Style)",
+  TAMIL_MY = "Tamil (Malaysian Casual)"
 }

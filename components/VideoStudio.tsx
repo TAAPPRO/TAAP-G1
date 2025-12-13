@@ -51,8 +51,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
 
       setGeneratedVideos([{ url: videoUrl, prompt }, ...generatedVideos]);
       onBalanceUpdate(newBalance);
-      setPrompt("");
-      setStartImage(null);
+      // Optional: Clear prompt after success? keeping it might be better for tweaks.
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -141,70 +140,97 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
              </div>
           </div>
 
-          <button 
-            onClick={handleGenerateClick} 
-            disabled={isGenerating}
-            className="w-full py-4 bg-gradient-to-r from-gray-900 to-black hover:bg-black text-white font-bold rounded-xl shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98] transition-all"
-          >
-            {isGenerating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5"/>}
-            {isGenerating ? "Neural Engine Processing..." : (
-                <span className="flex items-center gap-1">Generate AI Video <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] flex items-center gap-0.5"><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /> High Energy</span></span>
-            )}
-          </button>
-          <p className="text-center text-[10px] text-gray-400">Powered by Veo 3.1 Neural Network.</p>
+          {/* GENERATE BUTTON */}
+          <div className="pt-2">
+              <button 
+                onClick={handleGenerateClick} 
+                disabled={isGenerating}
+                className="w-full py-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-lg rounded-xl shadow-lg hover:shadow-orange-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed transform active:scale-95"
+              >
+                  {isGenerating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5 fill-current"/>}
+                  {isGenerating ? "Generating Video..." : (
+                      <span className="flex items-center gap-1">Create AI Video <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] flex items-center gap-0.5"><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /> High Energy</span></span>
+                  )}
+              </button>
+          </div>
+
+          {error && (
+              <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> {error}
+              </div>
+          )}
+          
+          {progressMsg && (
+              <div className="p-3 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-100 flex items-center gap-2 animate-pulse">
+                  <Loader2 className="w-3 h-3 animate-spin" /> {progressMsg}
+              </div>
+          )}
+
         </div>
 
-        {/* OUTPUT COLUMN */}
-        <div className="lg:col-span-8 bg-gray-900 rounded-3xl p-6 min-h-[500px] flex flex-col relative overflow-hidden">
-            {/* HUD Decoration */}
-            <div className="absolute top-4 left-4 flex gap-1.5 opacity-40">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-            </div>
-            <div className="absolute top-4 right-4 text-[10px] text-gray-500 font-mono flex items-center gap-2">
-                <Monitor className="w-3 h-3"/> VEO_OUTPUT_RENDERER_LIVE
-            </div>
-
-            <div className="flex-1 mt-6 flex flex-col">
-                {isGenerating ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
-                        <div className="relative">
-                            <div className="w-24 h-24 border-b-2 border-orange-500 rounded-full animate-spin"></div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <Film className="w-8 h-8 text-orange-400 animate-pulse" />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                           <h3 className="text-white font-bold text-lg">{progressMsg}</h3>
-                           <p className="text-gray-500 text-xs max-w-xs mx-auto">Neural nodes are syncing frames. Please do not close this window.</p>
-                        </div>
-                    </div>
-                ) : generatedVideos.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-600 opacity-60">
-                        <Film className="w-16 h-16 mb-4" />
-                        <p className="text-sm font-bold">No Videos Generated Yet</p>
-                        <p className="text-xs">Fill the prompt and start rendering.</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-6">
-                        {generatedVideos.map((video, idx) => (
-                            <div key={idx} className="bg-black rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                                <video controls className="w-full aspect-video bg-black">
-                                    <source src={video.url} type="video/mp4" />
-                                    Your browser does not support the video tag.
-                                </video>
-                                <div className="p-4 flex justify-between items-center">
-                                    <p className="text-white text-xs truncate max-w-[70%]">{video.prompt}</p>
-                                    <a href={video.url} download className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
-                                        <Download className="w-3 h-3" /> Save MP4
-                                    </a>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+        {/* --- RIGHT COLUMN: OUTPUT GALLERY (8 Columns) --- */}
+        <div className="lg:col-span-8 bg-gray-900 rounded-2xl border border-gray-800 min-h-[500px] flex flex-col p-6 relative overflow-hidden">
+            {/* Background decoration */}
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+            
+            <div className="flex items-center justify-between mb-6 relative z-10">
+                <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+                    <Monitor className="w-5 h-5 text-gray-400" /> Rendered Output
+                </h3>
+                {generatedVideos.length > 0 && (
+                    <span className="bg-green-900/30 text-green-400 text-xs font-bold px-3 py-1 rounded-full border border-green-500/30">
+                        {generatedVideos.length} Videos Ready
+                    </span>
                 )}
             </div>
+
+            {isGenerating ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4 text-center relative z-10">
+                    <div className="relative">
+                        <div className="w-20 h-20 border-4 border-orange-900/30 border-t-orange-500 rounded-full animate-spin"></div>
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                            <Film className="w-8 h-8 text-orange-500 animate-pulse" />
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-white font-bold text-lg animate-pulse">Processing Neural Video...</p>
+                        <p className="text-gray-500 text-xs mt-1 max-w-xs mx-auto">This process takes about 60-90 seconds. Do not close this tab.</p>
+                    </div>
+                </div>
+            ) : generatedVideos.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-600 opacity-60 relative z-10">
+                    <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mb-4 border border-gray-700">
+                        <Film className="w-12 h-12 text-gray-600" />
+                    </div>
+                    <p className="text-lg font-bold">No Videos Yet</p>
+                    <p className="text-sm max-w-xs mx-auto">Enter a prompt and generate your first cinematic video.</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                    {generatedVideos.map((vid, i) => (
+                        <div key={i} className="flex flex-col bg-black rounded-xl border border-gray-800 overflow-hidden shadow-2xl">
+                            <div className="relative aspect-video bg-black group">
+                                <video 
+                                    src={vid.url} 
+                                    controls 
+                                    className="w-full h-full object-contain" 
+                                    poster="https://via.placeholder.com/640x360.png?text=Video+Ready"
+                                />
+                            </div>
+                            <div className="p-3 bg-gray-900">
+                                <p className="text-[10px] text-gray-400 line-clamp-2 mb-2 font-mono">{vid.prompt}</p>
+                                <a 
+                                    href={vid.url} 
+                                    download={`TAAP-VEO-${Date.now()}.mp4`}
+                                    className="w-full py-2 bg-white text-black rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
+                                >
+                                    <Download className="w-3 h-3" /> Save MP4
+                                </a>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
 
       </div>
@@ -214,7 +240,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
         onClose={() => setShowConfirm(false)}
         onConfirm={_executeGenerateVideo}
         title="Confirm Video Generation"
-        message={`This action will deduct ${costPerGen} credits to create a high-quality AI video. Proceed?`}
+        message="Video generation requires significant computing power. This will deduct 10 Neural Credits."
         confirmText="Yes, Create Video"
       />
     </div>

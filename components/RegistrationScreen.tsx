@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { CheckCircle, Loader2, User, Mail, Phone, LogOut, ArrowRight, Wifi, ImageOff, Crown, Check, X, ShieldCheck, CreditCard, ArrowLeft, Globe, Server, Lock, Download, AlertTriangle } from 'lucide-react';
+import { CheckCircle, Loader2, User, Mail, Phone, LogOut, ArrowRight, Wifi, ImageOff, Crown, Check, X, ShieldCheck, CreditCard, ArrowLeft, Globe, Server, Lock, Download, AlertTriangle, Zap } from 'lucide-react';
 import { CopyToClipboard } from './CopyToClipboard';
 import { Package } from '../types';
 
@@ -372,7 +372,11 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, 
                                                 )}
                                                 <span className="text-xs text-gray-500">{pkg.period}</span>
                                             </div>
-                                            <span className="inline-block mt-2 px-2 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded">{pkg.credit_label}</span>
+                                            
+                                            {/* DYNAMIC CREDIT VALUE */}
+                                            <span className={`inline-flex items-center gap-1 mt-2 px-3 py-1.5 text-xs font-bold rounded-lg border ${pkg.is_popular ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                                <Zap className="w-3 h-3 fill-current"/> {pkg.credits} Neural Credits
+                                            </span>
                                         </div>
 
                                         <ul className="space-y-3 mb-8 flex-1">

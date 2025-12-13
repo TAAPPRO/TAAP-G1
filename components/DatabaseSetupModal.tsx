@@ -9,7 +9,7 @@ interface DatabaseSetupModalProps {
   onClose: () => void;
 }
 
-// STEP 1: TABLES, SETTINGS & CLEANUP (Schema V9.0.18 - PAYOUT FIX)
+// STEP 1: TABLES, SETTINGS & CLEANUP (Schema V9.0.28 - NEW RATES)
 const DEFAULT_SQL_1 = `BEGIN;
 -- 1. CLEANUP OLD FUNCTIONS
 DROP FUNCTION IF EXISTS public.process_payout(bigint,text,text);
@@ -70,12 +70,12 @@ INSERT INTO public.system_settings (key,value,description) VALUES
 ('cost_per_autofill','1','Cost per autofill'),
 ('cost_per_image_generation','2','Cost per Imagen'),
 ('cost_per_video_generation','10','Cost per Veo'),
-('referral_discount_percent','5','Discount for new users via referral'),
-('affiliate_commission_agent','10','Agent Commission %'),
-('affiliate_commission_super','15','Super Agent Commission %'),
-('affiliate_commission_partner','20','Partner Commission %'),
-('tier_req_super_agent','10','Referrals required for Super Agent'),
-('tier_req_partner','50','Referrals required for Partner'),
+('referral_discount_percent','50','Discount for new users via referral (Updated)'),
+('affiliate_commission_agent','20','Agent Commission % (Updated)'),
+('affiliate_commission_super','25','Super Agent Commission % (Updated)'),
+('affiliate_commission_partner','30','Partner Commission % (Updated)'),
+('tier_req_super_agent','50','Referrals required for Super Agent (Updated)'),
+('tier_req_partner','100','Referrals required for Partner (Updated)'),
 ('admin_whatsapp','60176162761','Admin Contact Number'),
 ('payment_qr_url', 'https://lh3.googleusercontent.com/d/1AlmtkkZgELIA_zul3vGsWQ36zJ73X3wI', 'DuitNow QR Image URL') 
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
@@ -86,7 +86,6 @@ DECLARE
     r RECORD;
 BEGIN 
     -- MIGRATE LEGACY 'declined' STATUS TO 'rejected'
-    -- This must run before adding the new constraint.
     UPDATE public.payout_requests SET status = 'rejected' WHERE status = 'declined';
 
     -- DYNAMICALLY FIND AND DROP ALL CHECK CONSTRAINTS ON PAYOUT_REQUESTS
@@ -104,8 +103,6 @@ BEGIN
 
     -- Force column to TEXT to remove any Enum dependencies
     ALTER TABLE public.payout_requests ALTER COLUMN status TYPE text;
-    
-    -- Reset default to ensure consistency
     ALTER TABLE public.payout_requests ALTER COLUMN status SET DEFAULT 'pending';
     
     -- ADD A NEW, CORRECT CONSTRAINT to prevent future invalid values
@@ -127,9 +124,13 @@ BEGIN
     END IF;
 END $$;
 
+-- 5. HOTFIX: GRANT ACCESS TO SETTINGS IMMEDIATELY
+GRANT SELECT ON public.system_settings TO anon;
+GRANT SELECT ON public.packages TO anon;
+
 COMMIT;`;
 
-// STEP 2: CORE TRIGGERS (Schema V9.0.8)
+// STEP 2: CORE TRIGGERS (Schema V9.0.28 - AMBIGUOUS COLUMN FIX + NEW RATES)
 const DEFAULT_SQL_2 = `BEGIN;
 -- LOGGING HELPER
 CREATE OR REPLACE FUNCTION public.log_admin_action(p_action text,p_target text,p_details jsonb) RETURNS void LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.audit_trail (action,target_license_key,details) VALUES (p_action,p_target,p_details); END; $$;
@@ -172,12 +173,12 @@ BEGIN
         SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
         SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
         
-        -- Default Fallbacks
-        v_req_super := COALESCE(v_req_super, 10);
-        v_req_partner := COALESCE(v_req_partner, 50);
-        v_rate_agent := COALESCE(v_rate_agent, 10.0);
-        v_rate_super := COALESCE(v_rate_super, 15.0);
-        v_rate_partner := COALESCE(v_rate_partner, 20.0);
+        -- Default Fallbacks (UPDATED)
+        v_req_super := COALESCE(v_req_super, 50);
+        v_req_partner := COALESCE(v_req_partner, 100);
+        v_rate_agent := COALESCE(v_rate_agent, 20.0);
+        v_rate_super := COALESCE(v_rate_super, 25.0);
+        v_rate_partner := COALESCE(v_rate_partner, 30.0);
 
         IF v_rkey IS NOT NULL AND v_rkey!=NEW.license_key THEN 
           -- FIX: DYNAMIC PRICE LOOKUP FROM PACKAGES TABLE
@@ -224,20 +225,31 @@ $$;
 DROP TRIGGER IF EXISTS on_license_status_change ON public.licenses;
 CREATE TRIGGER on_license_status_change BEFORE INSERT OR UPDATE ON public.licenses FOR EACH ROW EXECUTE FUNCTION public.process_referral_commission();
 
--- GET REFERRALS
-CREATE OR REPLACE FUNCTION public.get_user_referrals(p_license_key text) RETURNS TABLE (user_name text,plan_type text,joined_at timestamptz,status text,commission_earned numeric, snapshot_discount numeric, snapshot_commission_rate numeric, commission_processed boolean) LANGUAGE plpgsql SECURITY DEFINER AS $$ 
+-- GET REFERRALS (FIXED: AMBIGUOUS COLUMN)
+DROP FUNCTION IF EXISTS public.get_user_referrals(text);
+CREATE OR REPLACE FUNCTION public.get_user_referrals(p_license_key text) RETURNS TABLE (user_name text, affiliate_code text, plan_type text, joined_at timestamptz, status text, commission_earned numeric, snapshot_discount numeric, snapshot_commission_rate numeric, commission_processed boolean) LANGUAGE plpgsql SECURITY DEFINER AS $$ 
 DECLARE v_code text; 
 BEGIN 
-  SELECT affiliate_code INTO v_code FROM public.licenses WHERE license_key=p_license_key; 
+  -- Explicitly qualify column to avoid ambiguity with output parameter 'affiliate_code'
+  SELECT l.affiliate_code INTO v_code FROM public.licenses l WHERE l.license_key=p_license_key; 
+  
   IF v_code IS NULL THEN RETURN; END IF; 
   RETURN QUERY 
-  SELECT l.user_name,l.plan_type,l.created_at,l.status,COALESCE((SELECT SUM(amount) FROM public.affiliate_logs al WHERE al.from_user=l.user_name AND al.license_key=p_license_key AND al.type='commission'),0)::numeric,COALESCE(l.snapshot_discount, 0)::numeric,COALESCE(l.snapshot_commission_rate, 0)::numeric,COALESCE(l.commission_processed, false)
+  SELECT l.user_name, l.affiliate_code, l.plan_type, l.created_at, l.status,COALESCE((SELECT SUM(amount) FROM public.affiliate_logs al WHERE al.from_user=l.user_name AND al.license_key=p_license_key AND al.type='commission'),0)::numeric,COALESCE(l.snapshot_discount, 0)::numeric,COALESCE(l.snapshot_commission_rate, 0)::numeric,COALESCE(l.commission_processed, false)
   FROM public.licenses l WHERE l.referred_by_code=v_code ORDER BY l.created_at DESC; 
 END; 
 $$;
 
--- NEW REGISTRATION
-CREATE OR REPLACE FUNCTION public.register_new_user(p_license_key text,p_name text,p_email text,p_phone text,p_plan text,p_referral_code text,p_snapshot_discount numeric) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ 
+-- NEW REGISTRATION (FIXED: UNDECLARED VARIABLES)
+CREATE OR REPLACE FUNCTION public.register_new_user(
+    p_license_key text,
+    p_name text,
+    p_email text,
+    p_phone text,
+    p_plan text,
+    p_referral_code text,
+    p_snapshot_discount numeric
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ 
 DECLARE 
   v_new_id bigint;
   v_ac text; 
@@ -247,18 +259,23 @@ DECLARE
   v_rate_agent numeric;
   v_rate_super numeric;
   v_rate_partner numeric;
-  v_verified_discount numeric := 0;
+  v_initial_credits int;
 BEGIN 
   PERFORM 1 FROM public.licenses WHERE user_email=p_email; 
   IF FOUND THEN RETURN jsonb_build_object('status','error','message','Email already registered'); END IF; 
   
-  -- Load Dynamic Rates for Snapshot
+  -- Load Dynamic Rates (Updated Defaults)
   SELECT value::numeric INTO v_rate_agent FROM public.system_settings WHERE key='affiliate_commission_agent';
   SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
   SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
-  v_rate_agent := COALESCE(v_rate_agent, 10.0);
-  v_rate_super := COALESCE(v_rate_super, 15.0);
-  v_rate_partner := COALESCE(v_rate_partner, 20.0);
+  
+  v_rate_agent := COALESCE(v_rate_agent, 20.0);
+  v_rate_super := COALESCE(v_rate_super, 25.0);
+  v_rate_partner := COALESCE(v_rate_partner, 30.0);
+
+  -- Get initial credits from package
+  SELECT credits INTO v_initial_credits FROM public.packages WHERE name = p_plan;
+  v_initial_credits := COALESCE(v_initial_credits, 200);
 
   -- Snapshot Logic
   IF p_referral_code IS NOT NULL AND p_referral_code != '' THEN
@@ -266,9 +283,6 @@ BEGIN
       FROM public.licenses WHERE affiliate_code = p_referral_code;
       
       IF FOUND THEN
-          SELECT value::numeric INTO v_verified_discount FROM public.system_settings WHERE key='referral_discount_percent';
-          v_verified_discount := COALESCE(v_verified_discount, 0);
-
           if v_upline_custom IS NOT NULL THEN v_upline_rate := v_upline_custom;
           ELSIF v_upline_tier = 'Partner' THEN v_upline_rate := v_rate_partner;
           ELSIF v_upline_tier = 'Super Agent' THEN v_upline_rate := v_rate_super;
@@ -278,15 +292,18 @@ BEGIN
   END IF;
 
   INSERT INTO public.licenses (
-      license_key,user_name,user_email,phone_number,plan_type,credits,status,affiliate_code,referred_by_code, snapshot_discount, snapshot_commission_rate, subscription_end_date
+      license_key, user_name, user_email, phone_number, plan_type, credits, status, 
+      affiliate_code, referred_by_code, snapshot_discount, snapshot_commission_rate, subscription_end_date
   ) VALUES (
-      v_key,p_name,p_email,p_phone,p_plan,p_initial_credits,p_status, CASE WHEN p_affiliate_code IS NOT NULL AND p_affiliate_code != '' THEN p_affiliate_code ELSE NULL END, p_referred_by_code, COALESCE(v_disc, 0), COALESCE(v_upline_rate, 0), v_expiry
+      p_license_key, p_name, p_email, p_phone, p_plan, v_initial_credits, 'pending', 
+      NULL, p_referral_code, COALESCE(p_snapshot_discount, 0), COALESCE(v_upline_rate, 0), NULL
   ) RETURNING id INTO v_new_id; 
   
-  IF p_affiliate_code IS NULL OR p_affiliate_code = '' THEN v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id; END IF;
+  v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); 
+  UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id;
   
-  PERFORM public.log_admin_action('CREATE_USER',v_key,jsonb_build_object('email',p_email)); 
-  RETURN jsonb_build_object('status','success','license_key',v_key); 
+  PERFORM public.log_admin_action('CREATE_USER', p_license_key, jsonb_build_object('email', p_email)); 
+  RETURN jsonb_build_object('status','success','license_key', p_license_key); 
   EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status','error','message',SQLERRM); 
 END; 
 $$;
@@ -305,7 +322,7 @@ GRANT EXECUTE ON FUNCTION public.get_user_referrals(text) TO anon;
 
 COMMIT;`;
 
-// STEP 3: ADMIN & UTILITY FUNCTIONS (Schema V9.0.15 - STRICT STATUS UPDATE)
+// STEP 3: ADMIN & UTILITY FUNCTIONS (Schema V9.0.28 - UPDATED DEFAULTS)
 const DEFAULT_SQL_3 = `BEGIN;
 -- ADMIN UPDATE USER
 CREATE OR REPLACE FUNCTION public.admin_update_user(p_id bigint,p_name text,p_email text,p_phone text,p_plan text,p_status text,p_credits integer,p_tier text,p_custom_rate numeric,p_bank_name text,p_bank_acc text,p_bank_holder text,p_balance numeric,p_expiry timestamptz,p_affiliate_code text,p_referred_by_code text,p_snapshot_discount numeric,p_snapshot_commission_rate numeric,p_admin_notes text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
@@ -320,7 +337,7 @@ EXCEPTION WHEN OTHERS THEN
 END; 
 $$;
 
--- ADMIN CREATE USER
+-- ADMIN CREATE USER (UPDATED DEFAULTS)
 CREATE OR REPLACE FUNCTION public.admin_create_user(p_name text,p_email text,p_phone text,p_plan text,p_initial_credits integer,p_status text,p_affiliate_code text,p_referred_by_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
 DECLARE 
   v_key text; v_ac text; v_new_id bigint; v_disc numeric := 0; v_upline_rate numeric := 0; v_upline_tier text; v_upline_custom numeric; v_rate_agent numeric; v_rate_super numeric; v_rate_partner numeric; v_expiry timestamptz;
@@ -330,7 +347,11 @@ BEGIN
   SELECT value::numeric INTO v_rate_agent FROM public.system_settings WHERE key='affiliate_commission_agent';
   SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
   SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
-  v_rate_agent := COALESCE(v_rate_agent, 10.0); v_rate_super := COALESCE(v_rate_super, 15.0); v_rate_partner := COALESCE(v_rate_partner, 20.0);
+  
+  -- NEW RATES
+  v_rate_agent := COALESCE(v_rate_agent, 20.0); 
+  v_rate_super := COALESCE(v_rate_super, 25.0); 
+  v_rate_partner := COALESCE(v_rate_partner, 30.0);
 
   IF p_referred_by_code IS NOT NULL AND p_referred_by_code != '' THEN
       SELECT value::numeric INTO v_disc FROM public.system_settings WHERE key='referral_discount_percent';
@@ -358,7 +379,7 @@ BEGIN
 END; 
 $$;
 
--- PROCESS PAYOUT (V9.0.15 - STRICT UPDATE)
+-- PROCESS PAYOUT
 CREATE OR REPLACE FUNCTION public.process_payout(p_payout_id bigint, p_status text, p_admin_note text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
 DECLARE 
   v_req record;
@@ -367,7 +388,6 @@ BEGIN
   SELECT * INTO v_req FROM public.payout_requests WHERE id=p_payout_id; 
   IF NOT FOUND THEN RETURN jsonb_build_object('status','error','message','Payout ID not found'); END IF; 
   
-  -- Force UPDATE (Works even if column was formerly enum)
   UPDATE public.payout_requests 
   SET status = p_status, 
       admin_note = p_admin_note, 
@@ -393,6 +413,45 @@ CREATE OR REPLACE FUNCTION public.admin_adjust_balance(p_license_key text, p_amo
 
 -- ADMIN BULK ACTION
 CREATE OR REPLACE FUNCTION public.admin_bulk_action(p_ids bigint[], p_action text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE v_cnt integer; BEGIN IF p_action='delete' THEN DELETE FROM public.licenses WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; ELSIF p_action='approve' THEN UPDATE public.licenses SET status='active', subscription_end_date = now() + interval '30 days' WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; ELSIF p_action='suspend' THEN UPDATE public.licenses SET status='suspended' WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; END IF; PERFORM public.log_admin_action('BULK_'||UPPER(p_action),'MULTIPLE',jsonb_build_object('cnt',v_cnt)); RETURN jsonb_build_object('status','success','count',v_cnt); END; $$;
+
+-- ADMIN UPDATE SETTING (FIX: Permission Denied)
+CREATE OR REPLACE FUNCTION public.admin_update_setting(p_key text, p_value text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    INSERT INTO public.system_settings (key, value) VALUES (p_key, p_value)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+END;
+$$;
+
+-- ADMIN UPDATE PACKAGE (FIX: Permission Denied)
+CREATE OR REPLACE FUNCTION public.admin_update_package(p_id bigint, p_updates jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    UPDATE public.packages SET
+        name = COALESCE((p_updates->>'name'), name),
+        price = COALESCE((p_updates->>'price')::numeric, price),
+        credits = COALESCE((p_updates->>'credits')::int, credits),
+        features = COALESCE((p_updates->>'features')::jsonb, features),
+        is_active = COALESCE((p_updates->>'is_active')::boolean, is_active),
+        is_popular = COALESCE((p_updates->>'is_popular')::boolean, is_popular),
+        ref_code = COALESCE((p_updates->>'ref_code'), ref_code),
+        period = COALESCE((p_updates->>'period'), period),
+        old_price = COALESCE((p_updates->>'old_price')::numeric, old_price),
+        credit_label = COALESCE((p_updates->>'credit_label'), credit_label),
+        color_theme = COALESCE((p_updates->>'color_theme'), color_theme)
+    WHERE id = p_id;
+END;
+$$;
+
+-- ADMIN MANAGE COUPON (FIX: Permission Denied)
+CREATE OR REPLACE FUNCTION public.admin_manage_coupon(p_action text, p_id bigint, p_code text, p_value numeric, p_type text, p_limit int) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF p_action = 'create' THEN
+        INSERT INTO public.coupons (code, discount_value, discount_type, usage_limit)
+        VALUES (p_code, p_value, p_type, p_limit);
+    ELSIF p_action = 'delete' THEN
+        DELETE FROM public.coupons WHERE id = p_id;
+    END IF;
+END;
+$$;
 
 -- ADMIN GET LICENSES PAGINATED
 CREATE OR REPLACE FUNCTION public.admin_get_licenses_paginated(p_page integer, p_limit integer, p_sort_by text, p_sort_dir text, p_search_term text, p_ref_filter text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
@@ -422,7 +481,7 @@ CREATE OR REPLACE FUNCTION public.admin_get_affiliate_leaderboard() RETURNS TABL
 CREATE OR REPLACE FUNCTION public.verify_coupon(p_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_c record; BEGIN SELECT * INTO v_c FROM public.coupons WHERE code=p_code AND is_active=true; IF NOT FOUND THEN RETURN jsonb_build_object('status','error'); END IF; RETURN jsonb_build_object('status','success','data',jsonb_build_object('code',v_c.code,'type',v_c.discount_type,'value',v_c.discount_value)); END; $$;
 CREATE OR REPLACE FUNCTION public.check_affiliate_code(p_code text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN PERFORM 1 FROM public.licenses WHERE affiliate_code=p_code; RETURN FOUND; END; $$;
 
--- PERMISSIONS (STRICT LOCKDOWN V2)
+-- PERMISSIONS (STRICT LOCKDOWN V3 - SECURE RPCS)
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
@@ -451,8 +510,11 @@ GRANT EXECUTE ON FUNCTION public.admin_create_broadcast(text, text, text, boolea
 GRANT EXECUTE ON FUNCTION public.admin_delete_broadcast(bigint) TO anon;
 GRANT EXECUTE ON FUNCTION public.admin_get_audit_trail(int, int, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.admin_get_affiliate_leaderboard() TO anon;
-GRANT EXECUTE ON FUNCTION public.process_payout(bigint, text, text) TO anon; -- MOVED HERE
+GRANT EXECUTE ON FUNCTION public.process_payout(bigint, text, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.check_expired_subscriptions() TO anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_setting(text, text) TO anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_package(bigint, jsonb) TO anon;
+GRANT EXECUTE ON FUNCTION public.admin_manage_coupon(text, bigint, text, numeric, text, int) TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
@@ -516,9 +578,9 @@ export const DatabaseSetupModal: React.FC<DatabaseSetupModalProps> = ({ isOpen, 
              <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     System Installer
-                    <span className="text-[10px] bg-red-500 text-white font-black px-2 py-0.5 rounded">V9.0.18 PAYOUT FIX</span>
+                    <span className="text-[10px] bg-red-500 text-white font-black px-2 py-0.5 rounded">V9.0.28 HOTFIX & RATES</span>
                 </h3>
-                <p className="text-xs text-gray-400">Step {step} of 4: {step === 4 ? 'Test Data Seed (Simulation)' : step === 1 ? 'Tables & Settings' : step === 2 ? 'Core Triggers (Dynamic Tiers)' : 'Admin Functions'}</p>
+                <p className="text-xs text-gray-400">Step {step} of 4: {step === 4 ? 'Test Data Seed (Simulation)' : step === 1 ? 'Tables & Settings (New Rates)' : step === 2 ? 'Core Triggers (Ambiguity Fix)' : 'Secure Admin Logic'}</p>
              </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-6 h-6"/></button>

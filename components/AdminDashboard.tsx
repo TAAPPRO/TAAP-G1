@@ -195,8 +195,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
     };
 
     const openPayoutModal = (id: number, type: 'approve' | 'reject') => {
+        // Use specific action types for payouts to distinguish from user bulk actions
+        const actionType = type === 'approve' ? 'approve_payout' : 'reject_payout';
+        
         setActionConfig({
-            type: type,
+            type: actionType,
             title: type === 'approve' ? "Approve Payout" : "Reject Payout",
             message: type === 'approve' 
                 ? "Confirm that you have transferred the funds. Enter transaction reference below." 
@@ -213,15 +216,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
 
         // OPTIMISTIC UPDATE: Update UI immediately before DB call for better UX
         const previousPayouts = [...payouts];
-        if (['approve', 'reject'].includes(actionConfig.type)) {
-             const status = actionConfig.type === 'approve' ? 'approved' : 'rejected';
+        
+        // Payout Optimistic Update
+        if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
+             const status = actionConfig.type === 'approve_payout' ? 'approved' : 'rejected';
              setPayouts(prev => prev.map(p => 
                  p.id === actionConfig.ids[0] ? { ...p, status: status as any, admin_note: note || '' } : p
              ));
         }
 
         try {
-            // USER ACTIONS
+            // USER ACTIONS (Bulk)
             if (['approve', 'suspend', 'delete'].includes(actionConfig.type)) {
                 const { data, error } = await supabase.rpc('admin_bulk_action', { 
                     p_ids: actionConfig.ids, 
@@ -232,9 +237,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
                 fetchUsers();
                 setSelectedUserIds([]); // Clear selection
             }
-            // PAYOUT ACTIONS
-            else if (['approve', 'reject'].includes(actionConfig.type)) {
-                const status = actionConfig.type === 'approve' ? 'approved' : 'rejected';
+            // PAYOUT ACTIONS (Single)
+            else if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
+                const status = actionConfig.type === 'approve_payout' ? 'approved' : 'rejected';
                 const finalNote = note || (status === 'approved' ? 'Processed' : 'Rejected by Admin');
                 
                 const { data, error } = await supabase.rpc('process_payout', { 
@@ -260,14 +265,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
                 }
                 
                 addToast(`Payout ${status}`, 'success');
-                
-                // NO IMMEDIATE FETCH. We trust the optimistic update.
-                // The background poller will sync eventually.
-                // This prevents the "flash back to pending" due to replication lag.
             }
         } catch (e: any) {
             // Revert Optimistic Update on Error
-            if (['approve', 'reject'].includes(actionConfig.type)) {
+            if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
                 setPayouts(previousPayouts);
             }
             console.error("ExecuteAction Exception:", e);
@@ -281,7 +282,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
 
     const handleUpdatePackage = async (id: number, updates: any) => {
         try {
-            const { error } = await supabase.from('packages').update(updates).eq('id', id);
+            // FIX: Use RPC instead of direct update to avoid RLS issues
+            const { error } = await supabase.rpc('admin_update_package', { 
+                p_id: id, 
+                p_updates: updates 
+            });
             if (error) throw error;
             addToast("Package updated", 'success');
             fetchPackages();
@@ -290,7 +295,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
 
     const handleSaveSetting = async (key: string, value: string) => {
         try {
-            const { error } = await supabase.from('system_settings').update({ value }).eq('key', key);
+            // FIX: Use RPC instead of direct update to avoid RLS issues
+            const { error } = await supabase.rpc('admin_update_setting', { p_key: key, p_value: value });
             if (error) throw error;
             addToast("Setting saved", 'success');
             fetchSettings();

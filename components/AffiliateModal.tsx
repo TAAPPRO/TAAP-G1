@@ -21,6 +21,7 @@ interface LeaderboardEntry {
 interface ReferralEntry {
     joined_at: string;
     user_name: string;
+    affiliate_code?: string; // Updated to include affiliate_code
     plan_type: string;
     status: string;
     commission_earned: number; 
@@ -112,8 +113,8 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
             affiliate_balance: 5000, total_earnings: 12500, affiliate_tier: 'Partner', successful_referrals: 42
         } as License);
         setMyReferrals([
-            { joined_at: new Date().toISOString(), user_name: 'TAAP-G001', plan_type: 'TAAP PRO', status: 'active', commission_earned: 39.80, snapshot_discount: 5, snapshot_commission_rate: 20, commission_processed: true },
-            { joined_at: new Date().toISOString(), user_name: 'TAAP-G002', plan_type: 'Starter', status: 'pending', commission_earned: 0, snapshot_discount: 0, snapshot_commission_rate: 20, commission_processed: false }
+            { joined_at: new Date().toISOString(), user_name: 'Big Buyer', affiliate_code: 'TAAP-G001', plan_type: 'TAAP PRO', status: 'active', commission_earned: 39.80, snapshot_discount: 5, snapshot_commission_rate: 20, commission_processed: true },
+            { joined_at: new Date().toISOString(), user_name: 'Small Buyer', affiliate_code: 'TAAP-G002', plan_type: 'Starter', status: 'pending', commission_earned: 0, snapshot_discount: 0, snapshot_commission_rate: 20, commission_processed: false }
         ]);
         setPayoutHistory([]); setLedger([]); setLeaderboard([]);
         setIsLoading(false); setIsRefreshing(false);
@@ -261,11 +262,8 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
   const tierInfo = getNextTierInfo();
   const progressPercent = Math.min(100, (tierInfo.current / tierInfo.target) * 100);
 
-  const referralUrl = userData?.affiliate_code ? `${window.location.origin}/?ref=${userData.affiliate_code}` : "Loading...";
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(referralUrl)}`;
-
   const filteredReferrals = myReferrals.filter(r => 
-      r.user_name.toLowerCase().includes(referralSearch.toLowerCase()) || 
+      (r.affiliate_code || r.user_name).toLowerCase().includes(referralSearch.toLowerCase()) || 
       r.plan_type.toLowerCase().includes(referralSearch.toLowerCase()) ||
       r.status.toLowerCase().includes(referralSearch.toLowerCase())
   );
@@ -273,11 +271,11 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 md:p-4 bg-black/70 backdrop-blur-md animate-fade-in font-sans">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 md:p-4 bg-black/70 backdrop-blur-md animate-fade-in font-sans tracking-tight">
       <div className="bg-white md:rounded-[2rem] shadow-2xl w-full max-w-5xl h-[100dvh] md:h-[85vh] flex flex-col overflow-hidden relative border-0 md:border border-gray-800">
         
         {/* --- GLOBAL CLOSE & REFRESH --- */}
-        <div className="absolute top-4 right-4 z-50 flex gap-2">
+        <div className="absolute top-3 right-3 md:top-4 md:right-4 z-50 flex gap-2">
             <button onClick={() => loadAffiliateData(true)} className="p-2 bg-white/90 hover:bg-white backdrop-blur rounded-full text-gray-500 hover:text-black shadow-sm transition-colors border border-gray-200" title="Refresh Data">
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
@@ -286,67 +284,63 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
             </button>
         </div>
 
-        {/* --- SIDEBAR --- */}
+        {/* --- LAYOUT CONTAINER --- */}
         <div className="flex flex-col md:flex-row h-full">
-            <aside className="w-full md:w-72 bg-black text-white p-4 md:p-8 flex flex-col justify-between shrink-0 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
-                <div className="relative z-10 flex flex-col md:block h-full md:h-auto">
-                    <div className="flex items-center gap-3 md:gap-4 mb-6">
-                        <div className="w-8 h-8 md:w-12 md:h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg md:rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-                            <Users className="w-4 h-4 md:w-6 md:h-6 text-white" />
-                        </div>
-                        <div>
-                            <span className="text-[9px] md:text-[10px] font-bold text-orange-500 tracking-[0.2em] uppercase block mb-0.5 md:mb-1">Exclusive</span>
-                            <h2 className="text-sm md:text-xl font-black text-white leading-none tracking-tight">PARTNER<br/>PROGRAM</h2>
+            
+            {/* --- SIDEBAR / MOBILE NAV --- */}
+            <aside className="w-full md:w-72 bg-black text-white flex flex-col justify-between shrink-0 relative overflow-hidden transition-all duration-300">
+                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 pointer-events-none"></div>
+                
+                {/* Header Section */}
+                <div className="relative z-10 flex flex-col p-4 md:p-8">
+                    <div className="flex items-center justify-between md:justify-start gap-3 md:gap-4 mb-4 md:mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 md:w-12 md:h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg md:rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                                <Users className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                            </div>
+                            <div>
+                                <span className="text-[9px] md:text-[10px] font-bold text-orange-500 tracking-[0.2em] uppercase block mb-0.5 md:mb-1">Exclusive</span>
+                                <h2 className="text-sm md:text-xl font-black text-white leading-none tracking-tight">PARTNER<br/>PROGRAM</h2>
+                            </div>
                         </div>
                     </div>
 
-                    {/* BIG MEMBER CODE HEADER */}
-                    <div className="bg-gray-900 rounded-2xl p-5 mb-6 border border-gray-800 text-center relative overflow-hidden group">
+                    {/* Member Code - Collapsible on Mobile */}
+                    <div className="bg-gray-900 rounded-xl md:rounded-2xl p-3 md:p-5 mb-4 md:mb-6 border border-gray-800 text-center relative overflow-hidden group">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-amber-500"></div>
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Your Member Code</p>
-                        <h1 className="text-2xl font-black text-white tracking-wider font-mono my-2 group-hover:text-orange-400 transition-colors">
+                        <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Your Code</p>
+                        <h1 className="text-lg md:text-2xl font-black text-white tracking-wider font-mono my-1 md:my-2 group-hover:text-orange-400 transition-colors">
                             {userData?.affiliate_code || '....'}
                         </h1>
-                        <CopyToClipboard 
-                            text={userData?.affiliate_code || ''} 
-                            className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 py-1.5 px-3 rounded-lg w-full flex justify-center border border-gray-700 font-bold"
-                            label="COPY CODE"
-                        />
+                        <div className="hidden md:block">
+                            <CopyToClipboard 
+                                text={userData?.affiliate_code || ''} 
+                                className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 py-1.5 px-3 rounded-lg w-full flex justify-center border border-gray-700 font-bold"
+                                label="COPY CODE"
+                            />
+                        </div>
                     </div>
 
-                    <nav className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible no-scrollbar pb-1 md:pb-0 pr-10 md:pr-0">
-                        <NavButton active={activeTab === 'intro'} onClick={() => setActiveTab('intro')} icon={BookOpen} label="Introduction" />
+                    {/* Navigation - Scrollable on Mobile */}
+                    <nav className="flex md:flex-col gap-2 overflow-x-auto no-scrollbar pb-1 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0">
+                        <NavButton active={activeTab === 'intro'} onClick={() => setActiveTab('intro')} icon={BookOpen} label="Guide" />
                         <NavButton active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={LayoutGrid} label="Dashboard" />
-                        <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={Share2} label="Links & QR" />
+                        <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={Share2} label="Referral" />
                         <NavButton active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} icon={Wallet} label="Payout" />
                         <NavButton active={activeTab === 'ledger'} onClick={() => setActiveTab('ledger')} icon={FileText} label="Ledger" />
                     </nav>
                 </div>
 
-                <div className="relative z-10 hidden md:block pt-8 border-t border-gray-800/50 mt-4">
+                {/* Footer / Profile - Hidden on Mobile to save space */}
+                <div className="relative z-10 hidden md:block p-4 md:p-8 pt-0">
                     <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-                        <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
                                 <User className="w-4 h-4 text-gray-400" />
                             </div>
                             <div className="min-w-0">
                                 <p className="text-sm font-bold text-white truncate">{userData?.user_name || 'Partner'}</p>
                                 <p className="text-xs text-gray-500 truncate font-mono">{userData?.license_key || '****'}</p>
-                            </div>
-                        </div>
-                        
-                        {/* TIER PROGRESS BAR */}
-                        <div className="mt-3 cursor-pointer group" onClick={() => setShowTierInfo(true)}>
-                            <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                                <span>{userData?.affiliate_tier || 'Agent'}</span>
-                                {tierInfo.next !== 'Max Level' && <span className="text-orange-400 group-hover:text-orange-300 transition-colors flex items-center gap-1">Next: {tierInfo.next} <Info className="w-3 h-3"/></span>}
-                            </div>
-                            <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden border border-gray-700">
-                                <div className="bg-gradient-to-r from-orange-500 to-amber-500 h-full rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
-                            </div>
-                            <div className="text-[9px] text-gray-500 text-right mt-1">
-                                {tierInfo.current} / {tierInfo.target} Referrals
                             </div>
                         </div>
                     </div>
@@ -373,31 +367,31 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                             
                             {/* --- INTRODUCTION TAB --- */}
                             {activeTab === 'intro' && (
-                                <div className="space-y-10 animate-fade-in">
+                                <div className="space-y-8 animate-fade-in">
                                     <div className="text-center md:text-left border-b border-gray-200 pb-6">
-                                        <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-3 tracking-tight">Welcome to the <span className="text-orange-600">Partner Ecosystem</span></h2>
-                                        <p className="text-gray-600 text-lg max-w-2xl">
-                                            Turn your network into net worth. Generate passive income by introducing TAAP GenPro to entrepreneurs and businesses.
+                                        <h2 className="text-2xl md:text-4xl font-black text-gray-900 mb-2 tracking-tight">Partner <span className="text-orange-600">Ecosystem</span></h2>
+                                        <p className="text-gray-600 text-sm md:text-lg max-w-2xl font-medium">
+                                            Turn your network into net worth. Generate passive income by introducing TAAP GenPro.
                                         </p>
                                     </div>
 
                                     {/* HOW IT WORKS */}
                                     <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                                            <Zap className="w-6 h-6 text-orange-600" /> How to Make Money
+                                        <h3 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2">
+                                            <Zap className="w-5 h-5 md:w-6 md:h-6 text-orange-600" /> How to Make Money
                                         </h3>
                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                             {[
-                                                { step: 1, title: "Share Your Link", desc: "Copy your unique referral link or QR code from the 'Links & QR' tab." },
-                                                { step: 2, title: "They Register", desc: `When someone clicks your link, they get a ${referralDiscount}% discount on their subscription.` },
-                                                { step: 3, title: "System Tracks", desc: "Our system automatically tags you as their 'Upline' permanently." },
-                                                { step: 4, title: "You Get Paid", desc: `Earn ${tierConfig.rates.agent}%-${tierConfig.rates.partner}% commission every time they subscribe or renew.` }
+                                                { step: 1, title: "Promote Code", desc: "Use your code " + (userData?.affiliate_code || 'TAAP-G...') + " in content. Place your referral link ONLY in 'Link Bio'." },
+                                                { step: 2, title: "They Register", desc: `Users get a ${referralDiscount}% discount when they use your code to subscribe.` },
+                                                { step: 3, title: "System Tracks", desc: "Our system automatically tags you as their 'Referrer' permanently." },
+                                                { step: 4, title: "You Get Paid", desc: `Earn ${tierConfig.rates.agent}%-${tierConfig.rates.partner}% commission on every subscription renewal.` }
                                             ].map((item) => (
                                                 <div key={item.step} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
                                                     <div className="absolute top-0 right-0 p-4 opacity-10 font-black text-6xl text-gray-300">{item.step}</div>
                                                     <div className="relative z-10">
                                                         <h4 className="font-bold text-gray-900 mb-2">{item.title}</h4>
-                                                        <p className="text-xs text-gray-600 leading-relaxed">{item.desc}</p>
+                                                        <p className="text-xs text-gray-600 leading-relaxed font-medium">{item.desc}</p>
                                                     </div>
                                                 </div>
                                             ))}
@@ -406,79 +400,49 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
 
                                     {/* COMMISSION STRUCTURE */}
                                     <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                                            <Target className="w-6 h-6 text-purple-600" /> Commission Tiers
+                                        <h3 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2">
+                                            <Target className="w-5 h-5 md:w-6 md:h-6 text-purple-600" /> Commission Tiers
                                         </h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                                             <div className="bg-gray-50 border-2 border-gray-200 rounded-2xl p-6 flex flex-col items-center text-center">
-                                                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mb-4 font-black text-gray-600">1</div>
+                                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-200 rounded-full flex items-center justify-center mb-4 font-black text-gray-600">1</div>
                                                 <h4 className="text-lg font-bold text-gray-900">Agent</h4>
                                                 <p className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">0 - {tierConfig.thresholds.super - 1} Referrals</p>
                                                 <div className="text-3xl font-black text-gray-900 mb-2">{tierConfig.rates.agent}%</div>
-                                                <p className="text-xs text-gray-500">Commission Rate</p>
+                                                <p className="text-xs text-gray-500 font-medium">Commission Rate</p>
                                             </div>
                                             <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-6 flex flex-col items-center text-center transform md:-translate-y-2 shadow-lg">
-                                                <div className="w-12 h-12 bg-purple-200 text-purple-700 rounded-full flex items-center justify-center mb-4 font-black">2</div>
+                                                <div className="w-10 h-10 md:w-12 md:h-12 bg-purple-200 text-purple-700 rounded-full flex items-center justify-center mb-4 font-black">2</div>
                                                 <h4 className="text-lg font-bold text-purple-900">Super Agent</h4>
                                                 <p className="text-xs text-purple-600 font-bold uppercase tracking-widest mb-4">{tierConfig.thresholds.super} - {tierConfig.thresholds.partner - 1} Referrals</p>
                                                 <div className="text-3xl font-black text-purple-900 mb-2">{tierConfig.rates.super}%</div>
-                                                <p className="text-xs text-purple-600">Commission Rate</p>
+                                                <p className="text-xs text-purple-600 font-medium">Commission Rate</p>
                                             </div>
                                             <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 flex flex-col items-center text-center">
-                                                <div className="w-12 h-12 bg-orange-200 text-orange-700 rounded-full flex items-center justify-center mb-4 font-black">3</div>
+                                                <div className="w-10 h-10 md:w-12 md:h-12 bg-orange-200 text-orange-700 rounded-full flex items-center justify-center mb-4 font-black">3</div>
                                                 <h4 className="text-lg font-bold text-orange-900">Partner</h4>
                                                 <p className="text-xs text-orange-600 font-bold uppercase tracking-widest mb-4">{tierConfig.thresholds.partner}+ Referrals</p>
                                                 <div className="text-3xl font-black text-orange-900 mb-2">{tierConfig.rates.partner}%</div>
-                                                <p className="text-xs text-orange-600">Commission Rate</p>
+                                                <p className="text-xs text-orange-600 font-medium">Commission Rate</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* WITHDRAWAL & RULES */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-                                            <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-                                                <Wallet className="w-5 h-5 text-green-600" /> Withdrawal Process
-                                            </h3>
-                                            <ul className="space-y-3 text-sm text-gray-600">
-                                                <li className="flex gap-3">
-                                                    <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                                                    <span>Minimum withdrawal amount is <strong>RM 50.00</strong>.</span>
-                                                </li>
-                                                <li className="flex gap-3">
-                                                    <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                                                    <span>Go to 'Payout' tab, enter amount and bank details.</span>
-                                                </li>
-                                                <li className="flex gap-3">
-                                                    <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                                                    <span>Processed within <strong>24 - 48 Hours</strong> (Business Days).</span>
-                                                </li>
-                                            </ul>
-                                        </div>
-
-                                        <div className="bg-red-50 border border-red-100 rounded-2xl p-6">
-                                            <h3 className="font-bold text-red-900 flex items-center gap-2 mb-4">
-                                                <ShieldCheck className="w-5 h-5 text-red-600" /> Important Rules
-                                            </h3>
-                                            <ul className="space-y-3 text-sm text-red-800">
-                                                <li className="flex gap-3">
-                                                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                                                    <span><strong>Strictly No Self-Referral:</strong> You cannot use your own link to buy a subscription for yourself. System will detect and ban.</span>
-                                                </li>
-                                                <li className="flex gap-3">
-                                                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                                                    <span>Do not make misleading claims about guaranteed income.</span>
-                                                </li>
-                                                <li className="flex gap-3">
-                                                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                                                    <span>Commissions are finalized only after the user payment is verified.</span>
-                                                </li>
-                                            </ul>
-                                        </div>
+                                    {/* STRICT POLICIES */}
+                                    <div className="bg-red-50 border border-red-200 rounded-xl p-5 mt-8">
+                                        <h3 className="text-red-800 font-bold text-lg mb-3 flex items-center gap-2">
+                                            <AlertTriangle className="w-5 h-5"/> Strict Partner Integrity Policy
+                                        </h3>
+                                        <ul className="list-disc pl-5 space-y-2 text-sm text-red-700">
+                                            <li><strong>No Self-Referrals:</strong> You cannot use your own code to buy a subscription. Accounts detected doing this will be suspended immediately.</li>
+                                            <li><strong>Real Users Only:</strong> Creating fake accounts to earn commission constitutes fraud.</li>
+                                            <li><strong>Withdrawal Verification:</strong> Bank account name must match your registered profile name.</li>
+                                            <li><strong>One Account Policy:</strong> Users are allowed only one affiliate account.</li>
+                                        </ul>
                                     </div>
 
                                     <div className="flex justify-center pt-4">
-                                        <button onClick={() => setActiveTab('home')} className="bg-black hover:bg-gray-800 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center gap-2">
+                                        <button onClick={() => setActiveTab('home')} className="bg-black hover:bg-gray-800 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center gap-2 w-full md:w-auto justify-center">
                                             Go to Dashboard <ChevronRight className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -488,14 +452,15 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                             {/* --- HOME TAB --- */}
                             {activeTab === 'home' && (
                                 <div className="space-y-6 md:space-y-8 animate-fade-in">
-                                    <div className="flex flex-col md:flex-row gap-6">
-                                        <div className="flex-1 bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] shadow-2xl relative overflow-hidden group border border-gray-800">
+                                    <div className="flex flex-col lg:flex-row gap-6">
+                                        {/* WALLET CARD */}
+                                        <div className="flex-[1.5] bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] shadow-2xl relative overflow-hidden group border border-gray-800 flex flex-col justify-between min-h-[220px]">
                                             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 group-hover:bg-white/10 transition-colors"></div>
-                                            <div className="relative z-10 flex flex-col h-full justify-between min-h-[160px] md:min-h-[200px]">
-                                                <div className="flex justify-between items-start">
+                                            <div className="relative z-10">
+                                                <div className="flex justify-between items-start mb-6">
                                                     <div className="flex flex-col">
                                                         <span className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-2">Wallet Balance</span>
-                                                        <h2 className="text-4xl md:text-5xl font-black tracking-tight flex items-baseline gap-1 font-mono">
+                                                        <h2 className="text-4xl md:text-5xl font-black tracking-tight flex items-baseline gap-1 font-mono tabular-nums">
                                                             <span className="text-lg md:text-2xl text-gray-500 font-sans font-bold">RM</span>
                                                             {Number(userData?.affiliate_balance || 0).toFixed(2)}
                                                         </h2>
@@ -504,7 +469,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                         <Wallet className="w-5 h-5 md:w-6 md:h-6 text-white" />
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-3 mt-6 md:mt-8">
+                                                <div className="flex gap-3">
                                                     <button onClick={() => setActiveTab('finance')} className="flex-1 bg-white text-black py-2.5 md:py-3 rounded-xl font-bold text-xs md:text-sm hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
                                                         <ArrowDownLeft className="w-4 h-4" /> Withdraw
                                                     </button>
@@ -514,6 +479,42 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* AFFILIATE JOURNEY CARD (RESTORED) */}
+                                        <div className="flex-1 bg-black rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-8 border border-gray-800 relative overflow-hidden flex flex-col justify-center min-h-[220px]">
+                                             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                                             
+                                             <div className="relative z-10">
+                                                 <div className="flex items-center gap-4 mb-6">
+                                                     <div className="w-12 h-12 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center shadow-lg">
+                                                         <User className="w-6 h-6 text-gray-400" />
+                                                     </div>
+                                                     <div className="min-w-0">
+                                                         <h3 className="text-white font-bold text-lg truncate">{userData?.user_name || 'Partner'}</h3>
+                                                         <p className="text-gray-500 text-xs font-mono uppercase tracking-widest">{userData?.affiliate_code}</p>
+                                                     </div>
+                                                 </div>
+
+                                                 <div className="space-y-3">
+                                                     <div className="flex justify-between items-end text-sm">
+                                                         <span className="text-gray-400 font-medium">{userData?.affiliate_tier || 'Agent'}</span>
+                                                         {tierInfo.next !== 'Max Level' && (
+                                                             <span className="text-orange-500 font-bold text-xs flex items-center gap-1 cursor-help hover:text-orange-400 transition-colors" onClick={() => setShowTierInfo(true)}>
+                                                                 Next: {tierInfo.next} <Info className="w-3 h-3"/>
+                                                             </span>
+                                                         )}
+                                                     </div>
+                                                     
+                                                     <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden border border-gray-700 shadow-inner">
+                                                         <div className="bg-gradient-to-r from-orange-600 to-amber-500 h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(249,115,22,0.5)]" style={{ width: `${progressPercent}%` }}></div>
+                                                     </div>
+                                                     
+                                                     <div className="text-right text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+                                                         {tierInfo.current} / {tierInfo.target} Referrals
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                        </div>
                                     </div>
 
                                     {/* Stats Grid */}
@@ -521,20 +522,20 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                         <StatCard label="Lifetime Earnings" value={`RM ${Number(userData?.total_earnings || 0).toFixed(0)}`} icon={Trophy} isMoney={true} />
                                         <StatCard label="Active Referrals" value={userData?.successful_referrals || 0} icon={Users} />
                                         <div onClick={() => setShowTierInfo(true)} className="cursor-pointer">
-                                            <StatCard label="Commission Rate" value={`${getRateValue()}%`} icon={Percent} subtext="Click to view Tiers" />
+                                            <StatCard label="Commission Rate" value={`${getRateValue()}%`} icon={Percent} subtext="View Tiers" />
                                         </div>
-                                        <StatCard label="Monthly Projection" value={`RM ${calculateMonthlyProjection().toFixed(0)}`} icon={TrendingUp} isMoney={true} subtext="Based on Net Sales" />
+                                        <StatCard label="Monthly Projection" value={`RM ${calculateMonthlyProjection().toFixed(0)}`} icon={TrendingUp} isMoney={true} subtext="Net Sales" />
                                     </div>
 
                                     {/* Leaderboard */}
-                                    <div className="bg-white rounded-2xl border border-gray-200 p-5 md:p-6 shadow-sm">
-                                        <div className="flex items-center justify-between mb-6">
+                                    <div className="bg-white rounded-2xl border border-gray-200 p-5 md:p-6 shadow-sm overflow-x-auto">
+                                        <div className="flex items-center justify-between mb-4 md:mb-6 min-w-[300px]">
                                             <h3 className="font-bold text-gray-900 flex items-center gap-2 text-base md:text-lg">
                                                 <Crown className="w-5 h-5 text-orange-500 fill-current" /> Top Performers
                                             </h3>
                                             <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full uppercase tracking-wide border border-gray-100">This Week</span>
                                         </div>
-                                        <div className="space-y-1">
+                                        <div className="space-y-1 min-w-[300px]">
                                             {leaderboard.slice(0, 5).map((l, i) => (
                                                 <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-orange-50 transition-colors group">
                                                     <div className="flex items-center gap-3 md:gap-4">
@@ -544,7 +545,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                             <p className="text-[10px] font-bold text-gray-400 uppercase">{l.affiliate_tier}</p>
                                                         </div>
                                                     </div>
-                                                    <span className="font-mono font-bold text-green-600 text-xs md:text-sm">RM {Number(l.total_earnings).toLocaleString()}</span>
+                                                    <span className="font-mono font-bold text-gray-900 text-xs md:text-sm tabular-nums">RM {Number(l.total_earnings).toLocaleString()}</span>
                                                 </div>
                                             ))}
                                             {leaderboard.length === 0 && <div className="p-6 text-center text-gray-400 text-sm">Be the first to appear here!</div>}
@@ -553,28 +554,32 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                 </div>
                             )}
 
-                            {/* --- PRODUCTS TAB (WITH QR) --- */}
+                            {/* --- MY REFERRAL TAB (NO QR) --- */}
                             {activeTab === 'products' && (
                                 <div className="space-y-8 animate-fade-in">
                                     <div className="bg-gradient-to-r from-orange-50 to-orange-100/50 border border-orange-200 rounded-2xl p-6 md:p-8 relative overflow-hidden">
-                                        <div className="flex flex-col md:flex-row items-center gap-8">
-                                            <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100 shrink-0">
-                                                <img src={qrCodeUrl} className="w-32 h-32 md:w-40 md:h-40 object-contain" alt="QR Code" />
-                                                <p className="text-[10px] text-center mt-2 font-bold text-gray-400 uppercase tracking-widest">Scan to Join</p>
+                                        <div className="flex flex-col items-start gap-4">
+                                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-orange-100">
+                                                <Share2 className="w-6 h-6 text-orange-600" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-1">Your Referral Credentials</h3>
+                                                <p className="text-xs md:text-sm text-gray-600 max-w-lg font-medium">
+                                                    Use your unique code in your content captions. Place the link <strong>only in your social media bio</strong> (Link Bio). Do not spam the link publicly.
+                                                </p>
                                             </div>
                                             
-                                            <div className="text-center md:text-left flex-1">
-                                                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mx-auto md:mx-0 mb-4 shadow-sm border border-orange-100">
-                                                    <Share2 className="w-6 h-6 text-orange-600" />
-                                                </div>
-                                                <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-2">Your Power Link</h3>
-                                                <p className="text-xs md:text-sm text-gray-600 mb-6 max-w-md">Share this link. When they join, the system automatically tags you as their upline.</p>
-                                                
-                                                <div className="flex flex-col md:flex-row gap-3">
-                                                    <div className="flex-1 px-4 py-3 bg-white rounded-xl text-xs md:text-sm font-mono text-gray-600 truncate border border-gray-200 shadow-sm flex items-center">
-                                                        {referralUrl}
+                                            <div className="w-full mt-4">
+                                                {/* Code Card - Expanded */}
+                                                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm text-center">
+                                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-3">Your Member Referral Code</span>
+                                                    <div className="flex flex-col items-center gap-4">
+                                                        <div className="text-4xl font-mono font-black text-gray-900 tracking-wider">
+                                                            {userData?.affiliate_code || '....'}
+                                                        </div>
+                                                        <p className="text-sm text-gray-500 max-w-md mx-auto">Share this code with your audience. They get a discount, you get commission.</p>
+                                                        <CopyToClipboard text={userData?.affiliate_code || ''} className="bg-black hover:bg-gray-800 text-white px-8 py-3 rounded-xl font-bold text-sm" label="Copy Member Code" />
                                                     </div>
-                                                    <CopyToClipboard text={referralUrl} className="bg-black text-white hover:bg-gray-800 px-6 py-3 rounded-xl font-bold text-sm" label="Copy" />
                                                 </div>
                                             </div>
                                         </div>
@@ -584,16 +589,16 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                     <div>
                                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                                             <h3 className="font-bold text-gray-900 flex items-center gap-2 text-base md:text-lg">
-                                                <Users className="w-5 h-5 text-gray-500" /> My Referrals <span className="text-gray-400 text-xs bg-gray-100 px-2 py-0.5 rounded-full">{filteredReferrals.length}</span>
+                                                <Users className="w-5 h-5 text-gray-500" /> My Referrals <span className="text-gray-400 text-xs bg-gray-100 px-2 py-0.5 rounded-full font-bold">{filteredReferrals.length}</span>
                                             </h3>
                                             <div className="relative w-full md:w-64">
                                                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400"/>
                                                 <input 
                                                     type="text" 
-                                                    placeholder="Search referral..." 
+                                                    placeholder="Search referral code..." 
                                                     value={referralSearch}
                                                     onChange={(e) => setReferralSearch(e.target.value)}
-                                                    className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                                                    className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
                                                 />
                                             </div>
                                         </div>
@@ -619,7 +624,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
                                                         {filteredReferrals.length === 0 ? (
-                                                            <tr><td colSpan={5} className="p-12 text-center text-gray-400">No referrals found matching your search.</td></tr>
+                                                            <tr><td colSpan={5} className="p-12 text-center text-gray-400 font-medium">No referrals found matching your search.</td></tr>
                                                         ) : filteredReferrals.map((r, i) => {
                                                             const isPaid = r.commission_earned > 0 || r.commission_processed;
                                                             const isPending = r.status === 'pending';
@@ -630,8 +635,8 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                             if (isPaid) {
                                                                 displayComm = (
                                                                     <div className="flex flex-col items-end">
-                                                                        <span className="text-green-600 font-bold font-mono bg-green-50 px-2 py-1 rounded border border-green-100">+RM {Number(r.commission_earned).toFixed(2)}</span>
-                                                                        <span className="text-[9px] text-gray-400 mt-0.5">Paid</span>
+                                                                        <span className="text-gray-900 font-bold font-mono bg-gray-100 px-2 py-1 rounded border border-gray-200 tabular-nums">+RM {Number(r.commission_earned).toFixed(2)}</span>
+                                                                        <span className="text-[9px] text-gray-400 mt-0.5 font-bold uppercase tracking-wide">Paid</span>
                                                                     </div>
                                                                 );
                                                             } else if (isActive || isPending) {
@@ -645,7 +650,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
 
                                                                 displayComm = (
                                                                     <div className="flex flex-col items-end opacity-80">
-                                                                        <span className={`font-bold font-mono text-xs px-2 py-1 rounded border ${isActive ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-orange-500 bg-orange-50 border-orange-100'}`}>
+                                                                        <span className={`font-bold font-mono text-xs px-2 py-1 rounded border text-gray-900 bg-gray-50 border-gray-200 tabular-nums`}>
                                                                             Est. RM {potentialComm.toFixed(2)}
                                                                         </span>
                                                                         <span className="text-[9px] text-gray-400 font-bold mt-0.5 flex items-center gap-1">
@@ -657,14 +662,15 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                             
                                                             return (
                                                                 <tr key={i} className="hover:bg-gray-50 transition-colors">
-                                                                    <td className="p-5 font-bold text-gray-900 font-mono text-xs">{r.user_name}</td>
+                                                                    {/* Render Affiliate Code instead of Name if available, fallback to Name */}
+                                                                    <td className="p-5 font-bold text-gray-900 font-mono text-xs tracking-wide">{r.affiliate_code || r.user_name}</td>
                                                                     <td className="p-5 text-gray-600 text-xs"><span className={`px-2.5 py-1 rounded-md font-bold text-[10px] uppercase tracking-wide border ${r.plan_type === 'TAAP PRO' ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200'}`}>{r.plan_type}</span></td>
                                                                     <td className="p-5 text-gray-500 text-xs font-mono">{safeDate(r.joined_at)}</td>
                                                                     <td className="p-5 text-right">
                                                                         {displayComm}
                                                                     </td>
                                                                     <td className="p-5 text-right">
-                                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${r.status === 'active' ? 'text-green-700 bg-green-50' : r.status === 'pending' ? 'text-orange-700 bg-orange-50' : 'text-gray-500 bg-gray-100'}`}>
+                                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${r.status === 'active' ? 'text-green-700 bg-green-50' : r.status === 'pending' ? 'text-orange-700 bg-orange-50' : 'text-gray-500 bg-gray-100'}`}>
                                                                             {r.status}
                                                                         </span>
                                                                     </td>
@@ -685,11 +691,11 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                     <div className="bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-sm">
                                         <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                                             <h3 className="text-xl md:text-2xl font-black text-gray-900 flex items-center gap-3">
-                                                <Banknote className="w-6 h-6 md:w-8 md:h-8 text-green-600" /> Request Withdrawal
+                                                <Banknote className="w-6 h-6 md:w-8 md:h-8 text-gray-900" /> Request Withdrawal
                                             </h3>
                                             <div className="text-left md:text-right bg-gray-50 md:bg-transparent p-4 md:p-0 rounded-xl">
                                                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-1">Available to Withdraw</p>
-                                                <p className="text-3xl font-black text-gray-900">RM {Number(userData?.affiliate_balance || 0).toFixed(2)}</p>
+                                                <p className="text-3xl font-black text-gray-900 tabular-nums">RM {Number(userData?.affiliate_balance || 0).toFixed(2)}</p>
                                             </div>
                                         </div>
 
@@ -713,7 +719,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                         type="number" 
                                                         value={withdrawAmount} 
                                                         onChange={e => setWithdrawAmount(e.target.value)} 
-                                                        className="w-full pl-16 p-5 bg-white border-2 border-gray-200 rounded-2xl text-2xl font-bold focus:border-green-500 focus:ring-0 outline-none transition-all placeholder-gray-300" 
+                                                        className="w-full pl-16 p-5 bg-white border-2 border-gray-200 rounded-2xl text-2xl font-bold focus:border-black focus:ring-0 outline-none transition-all placeholder-gray-300 tabular-nums" 
                                                         placeholder="0.00" 
                                                         min="50"
                                                     />
@@ -740,14 +746,14 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                             </button>
                                         </div>
                                         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100">
-                                            {payoutHistory.length === 0 ? <div className="p-12 text-center text-gray-400 text-sm">No payout history.</div> : payoutHistory.map(p => (
+                                            {payoutHistory.length === 0 ? <div className="p-12 text-center text-gray-400 text-sm font-medium">No payout history.</div> : payoutHistory.map(p => (
                                                 <div key={p.id} className="p-4 md:p-6 flex flex-col gap-2 hover:bg-gray-50 transition-colors">
                                                     <div className="flex justify-between items-center">
                                                         <div className="flex items-center gap-3 md:gap-4">
                                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                                                                p.status === 'approved' ? 'bg-green-100 text-green-600' :
-                                                                p.status === 'rejected' ? 'bg-red-100 text-red-600' :
-                                                                'bg-orange-100 text-orange-600'
+                                                                p.status === 'approved' ? 'bg-gray-200 text-gray-700' :
+                                                                p.status === 'rejected' ? 'bg-gray-200 text-gray-700' :
+                                                                'bg-gray-200 text-gray-700'
                                                             }`}>
                                                                 {p.status === 'approved' ? <CheckCircle2 className="w-4 h-4"/> : p.status === 'rejected' ? <AlertCircle className="w-4 h-4"/> : <Clock className="w-4 h-4"/>}
                                                             </div>
@@ -757,15 +763,15 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                                             </div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <p className="font-mono font-bold text-red-600 text-lg">- RM {Number(p.amount).toFixed(2)}</p>
-                                                            <p className={`text-[10px] font-bold uppercase ${
+                                                            <p className="font-mono font-bold text-gray-900 text-lg tabular-nums">- RM {Number(p.amount).toFixed(2)}</p>
+                                                            <p className={`text-[10px] font-bold uppercase tracking-wide ${
                                                                 p.status === 'approved' ? 'text-green-600' :
                                                                 p.status === 'rejected' ? 'text-red-600' :
                                                                 'text-orange-600'
                                                             }`}>{p.status}</p>
                                                         </div>
                                                     </div>
-                                                    {p.admin_note && <p className="text-xs text-gray-500 italic pl-12 border-l-2 border-gray-100 ml-4">Admin Note: {p.admin_note}</p>}
+                                                    {p.admin_note && <p className="text-xs text-gray-500 italic pl-12 border-l-2 border-gray-100 ml-4 font-medium">Admin Note: {p.admin_note}</p>}
                                                 </div>
                                             ))}
                                         </div>
@@ -777,20 +783,20 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                             {activeTab === 'ledger' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <h2 className="text-2xl font-black text-gray-900">Transaction Ledger</h2>
-                                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-                                        <table className="w-full text-left text-sm">
-                                            <thead className="bg-gray-50 border-b border-gray-200"><tr className="text-xs font-bold text-gray-500 uppercase">
+                                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-x-auto">
+                                        <table className="w-full text-left text-sm min-w-[500px]">
+                                            <thead className="bg-gray-50 border-b border-gray-200"><tr className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                                                 <th className="p-4">Date</th><th className="p-4">Type</th><th className="p-4">Description</th><th className="p-4 text-right">Amount</th>
                                             </tr></thead>
                                             <tbody className="divide-y divide-gray-100">
                                                 {ledger.length === 0 ? (
-                                                    <tr><td colSpan={4} className="p-10 text-center text-gray-400">No transactions recorded.</td></tr>
+                                                    <tr><td colSpan={4} className="p-10 text-center text-gray-400 font-medium">No transactions recorded.</td></tr>
                                                 ) : ledger.map(l => (
                                                     <tr key={l.id} className="hover:bg-gray-50">
                                                         <td className="p-4 text-gray-500 text-xs font-mono">{safeDate(l.created_at)}</td>
-                                                        <td className="p-4"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${l.type === 'commission' ? 'bg-green-50 text-green-700' : l.type === 'bonus' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>{l.type}</span></td>
-                                                        <td className="p-4 text-gray-600 text-xs max-w-xs truncate">{l.description}</td>
-                                                        <td className={`p-4 text-right font-bold font-mono ${l.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                        <td className="p-4"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600`}>{l.type}</span></td>
+                                                        <td className="p-4 text-gray-600 text-xs max-w-xs truncate font-medium">{l.description}</td>
+                                                        <td className={`p-4 text-right font-bold font-mono tabular-nums text-gray-900`}>
                                                             {l.amount > 0 ? '+' : ''}RM {Number(l.amount).toFixed(2)}
                                                         </td>
                                                     </tr>
@@ -812,7 +818,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in" onClick={() => setShowTierInfo(false)}>
                 <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full space-y-4" onClick={e => e.stopPropagation()}>
                     <h3 className="font-bold text-lg text-gray-900">Commission Tiers</h3>
-                    <div className="space-y-3">
+                    <div className="space-y-3 font-medium">
                         <div className="flex justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"><span>Agent: <strong>{tierConfig.rates.agent}%</strong></span><span className="text-xs text-gray-400">0+ Refs</span></div>
                         <div className="flex justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"><span>Super Agent: <strong>{tierConfig.rates.super}%</strong></span><span className="text-xs text-gray-400">{tierConfig.thresholds.super}+ Refs</span></div>
                         <div className="flex justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"><span>Partner: <strong>{tierConfig.rates.partner}%</strong></span><span className="text-xs text-gray-400">{tierConfig.thresholds.partner}+ Refs</span></div>
@@ -832,21 +838,21 @@ const StatCard: React.FC<{label: string, value: string|number, icon: any, isMone
             <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</p>
             <Icon className="w-4 h-4 text-gray-300" />
         </div>
-        <p className={`text-2xl md:text-3xl font-black mt-2 text-gray-900 ${isMoney ? 'font-mono tracking-tight' : ''}`}>{value}</p>
-        {subtext && <p className="text-[10px] text-gray-400 mt-1">{subtext}</p>}
+        <p className={`text-2xl md:text-3xl font-black mt-2 text-gray-900 ${isMoney ? 'font-mono tracking-tight tabular-nums' : ''}`}>{value}</p>
+        {subtext && <p className="text-[10px] text-gray-400 mt-1 font-medium">{subtext}</p>}
     </div>
 );
 
 const NavButton: React.FC<{active: boolean, onClick: () => void, icon: any, label: string}> = ({active, onClick, icon: Icon, label}) => (
     <button
         onClick={onClick}
-        className={`w-full text-left px-3 py-2 md:px-4 md:py-3 rounded-xl font-bold text-xs md:text-sm flex items-center gap-3 transition-all ${
+        className={`whitespace-nowrap px-3 py-2 md:px-4 md:py-3 rounded-xl font-bold text-xs md:text-sm flex items-center gap-2 md:gap-3 transition-all tracking-tight ${
             active
             ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
             : 'text-gray-400 hover:bg-gray-800 hover:text-white'
         }`}
     >
         <Icon className="w-4 h-4 shrink-0" />
-        <span className="truncate">{label}</span>
+        <span className="">{label}</span>
     </button>
 );

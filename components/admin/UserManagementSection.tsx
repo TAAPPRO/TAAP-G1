@@ -233,12 +233,12 @@ export const UserManagementSection: React.FC<UserManagementSectionProps> = ({
                                         <div onClick={(e) => { e.stopPropagation(); toggleSelect(user.id); }} className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border transition-colors ${isSelected ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-800 text-gray-400 border-gray-700'}`}>
                                             {isSelected ? <CheckSquare className="w-5 h-5" /> : user.user_name ? user.user_name.charAt(0).toUpperCase() : '?'}
                                         </div>
-                                        <div>
-                                            <h4 className="text-white font-bold text-sm line-clamp-1">{user.user_name || 'No Name'}</h4>
-                                            <p className="text-xs text-gray-500 font-mono">{user.user_email}</p>
+                                        <div className="overflow-hidden">
+                                            <h4 className="text-white font-bold text-sm truncate w-40">{user.user_name || 'No Name'}</h4>
+                                            <p className="text-xs text-gray-500 font-mono truncate w-40">{user.user_email}</p>
                                         </div>
                                     </div>
-                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${user.status === 'active' ? 'bg-green-900/20 text-green-400 border border-green-900/30' : user.status === 'suspended' ? 'bg-red-900/20 text-red-400 border border-red-900/30' : 'bg-orange-900/20 text-orange-400 border border-orange-900/30'}`}>
+                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase shrink-0 ${user.status === 'active' ? 'bg-green-900/20 text-green-400 border border-green-900/30' : user.status === 'suspended' ? 'bg-red-900/20 text-red-400 border border-red-900/30' : 'bg-orange-900/20 text-orange-400 border border-orange-900/30'}`}>
                                         {user.status}
                                     </span>
                                 </div>
@@ -246,7 +246,7 @@ export const UserManagementSection: React.FC<UserManagementSectionProps> = ({
                                 <div className="grid grid-cols-2 gap-2 mb-3">
                                     <div className="bg-black/40 rounded-lg p-2 border border-gray-800">
                                         <p className="text-[9px] text-gray-500 uppercase font-bold">Plan</p>
-                                        <p className="text-xs text-gray-300 font-bold">{user.plan_type}</p>
+                                        <p className="text-xs text-gray-300 font-bold truncate">{user.plan_type}</p>
                                     </div>
                                     <div className="bg-black/40 rounded-lg p-2 border border-gray-800">
                                         <p className="text-[9px] text-gray-500 uppercase font-bold">Credits</p>

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle, X, Loader2, FileText } from 'lucide-react';
 
 export interface ActionConfig {
-    type: 'approve' | 'reject' | 'suspend' | 'delete' | 'generic';
+    type: 'approve' | 'reject' | 'suspend' | 'delete' | 'generic' | 'approve_payout' | 'reject_payout';
     title: string;
     message: string;
     confirmLabel: string;
@@ -38,7 +38,7 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({ isOpen, onCl
         onClose();
     };
 
-    const isDanger = config.type === 'suspend' || config.type === 'delete' || config.type === 'reject';
+    const isDanger = config.type === 'suspend' || config.type === 'delete' || config.type === 'reject' || config.type === 'reject_payout';
     const Icon = isDanger ? AlertTriangle : CheckCircle;
     const colorClass = isDanger ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600';
     const btnClass = isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700';
@@ -58,7 +58,7 @@ export const AdminActionModal: React.FC<AdminActionModalProps> = ({ isOpen, onCl
                             {config.requiresInput && (
                                 <div className="mt-4">
                                     <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 flex items-center gap-1">
-                                        <FileText className="w-3 h-3" /> {config.type === 'reject' ? 'Reason for Rejection' : 'Admin Note'}
+                                        <FileText className="w-3 h-3" /> {config.type === 'reject' || config.type === 'reject_payout' ? 'Reason for Rejection' : 'Admin Note'}
                                     </label>
                                     <textarea 
                                         value={note}

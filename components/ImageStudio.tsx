@@ -228,7 +228,7 @@ export const ImageStudio: React.FC<ImageStudioProps> = ({ licenseKey, onBalanceU
               >
                   {isGenerating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5 fill-current"/>}
                   {isGenerating ? "Generating Visuals..." : (
-                      <span className="flex items-center gap-1">Generate Now <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] flex items-center gap-0.5"><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /> Medium Energy</span></span>
+                      <span className="flex items-center gap-1">Generate Now <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] flex items-center gap-0.5"><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /> Neural Energy</span></span>
                   )}
               </button>
           </div>
@@ -318,7 +318,7 @@ export const ImageStudio: React.FC<ImageStudioProps> = ({ licenseKey, onBalanceU
         onClose={() => setShowConfirm(false)}
         onConfirm={_executeGenerateImage}
         title="Confirm Image Generation"
-        message={`This action will deduct ${costPerGen} credits from your balance. Proceed?`}
+        message="This action will consume Neural Energy from your battery. Proceed?"
         confirmText="Yes, Generate Visuals"
       />
     </div>

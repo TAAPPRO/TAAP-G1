@@ -23,7 +23,17 @@ export const CouponsManager: React.FC<CouponsManagerProps> = ({ onToast }) => {
 
     const handleCreate = async () => {
         if (!newCoupon.code) return;
-        const { error } = await supabase.from('coupons').insert({ ...newCoupon, code: newCoupon.code.toUpperCase() });
+        
+        // FIX: Use RPC to bypass RLS
+        const { error } = await supabase.rpc('admin_manage_coupon', {
+            p_action: 'create',
+            p_id: 0, // Dummy ID for creation
+            p_code: newCoupon.code.toUpperCase(),
+            p_value: newCoupon.discount_value,
+            p_type: newCoupon.discount_type,
+            p_limit: newCoupon.usage_limit
+        });
+
         if (error) onToast(error.message, 'error');
         else {
             onToast("Coupon created", 'success');
@@ -34,8 +44,21 @@ export const CouponsManager: React.FC<CouponsManagerProps> = ({ onToast }) => {
 
     const handleDelete = async (id: number) => {
         if(!confirm("Delete this coupon?")) return;
-        await supabase.from('coupons').delete().eq('id', id);
-        fetchCoupons();
+        
+        // FIX: Use RPC to bypass RLS
+        const { error } = await supabase.rpc('admin_manage_coupon', {
+            p_action: 'delete',
+            p_id: id,
+            p_code: '', 
+            p_value: 0, 
+            p_type: '', 
+            p_limit: 0
+        });
+
+        if (error) onToast(error.message, 'error');
+        else {
+            fetchCoupons();
+        }
     };
 
     return (

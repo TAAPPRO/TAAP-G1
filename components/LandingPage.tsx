@@ -47,16 +47,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
           </div>
           
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
-             <button onClick={() => scrollToSection('features')} className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors">Ciri-Ciri</button>
-             <button onClick={() => scrollToSection('studio')} className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors">GenPro Studio</button>
-             <button onClick={() => scrollToSection('pricing')} className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors">Harga</button>
-             
-             <div className="h-5 w-px bg-gray-200"></div>
-             
+          <div className="hidden md:flex items-center gap-4">
              <button 
                 onClick={onLogin}
-                className="text-sm font-bold text-gray-900 hover:text-orange-600 transition-colors"
+                className="text-sm font-bold text-gray-900 hover:text-orange-600 transition-colors px-4 py-2"
              >
                 Login Ahli
              </button>
@@ -78,10 +72,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
         {/* Mobile Nav Dropdown */}
         {mobileMenuOpen && (
             <div className="md:hidden absolute top-full left-0 w-full bg-white/95 backdrop-blur-xl border-b border-gray-200 p-6 flex flex-col gap-4 shadow-2xl animate-fade-in-up">
-                <button onClick={() => scrollToSection('features')} className="text-sm font-bold text-gray-600 py-2 border-b border-gray-100 text-left">Ciri-Ciri Utama</button>
-                <button onClick={() => scrollToSection('studio')} className="text-sm font-bold text-gray-600 py-2 border-b border-gray-100 text-left">GenPro Studio (Veo)</button>
-                <button onClick={() => scrollToSection('pricing')} className="text-sm font-bold text-gray-600 py-2 border-b border-gray-100 text-left">Pakej Harga</button>
-                
                 <button onClick={onLogin} className="w-full py-4 bg-gray-50 rounded-2xl text-base font-bold text-gray-900 border border-gray-100 active:scale-95 transition-transform mt-2">Member Login</button>
                 <button onClick={onRegister} className="w-full py-4 bg-orange-600 text-white rounded-2xl text-base font-bold shadow-lg shadow-orange-500/30 active:scale-95 transition-transform">Subscribe Now</button>
             </div>

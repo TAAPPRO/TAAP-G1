@@ -246,14 +246,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, curre
                                     <div className="mb-4 text-center">
                                         <h3 className="font-bold text-gray-900 text-xl">{pkg.name}</h3>
                                         <div className="flex items-baseline justify-center gap-1 mt-1">
-                                            {pkg.old_price && <span className="text-xs text-gray-400 line-through">{pkg.old_price}</span>}
-                                            <span className="text-4xl font-black text-gray-900">{pkg.price}</span>
+                                            {pkg.old_price && <span className="text-xs text-gray-400 line-through">RM {pkg.old_price}</span>}
+                                            <span className="text-4xl font-black text-gray-900">RM {pkg.price}</span>
                                             <span className="text-xs text-gray-500 font-medium">{pkg.period}</span>
                                         </div>
                                     </div>
                                     
                                     <div className={`text-white rounded-lg p-3 text-center mb-6 shadow-md ${themeColor === 'black' ? 'bg-gray-800' : `bg-${themeColor}-600`}`}>
-                                        <span className="text-xs font-bold uppercase tracking-wide">{pkg.credit_label || `${pkg.credits} Credits`}</span>
+                                        {/* DYNAMIC CREDIT DISPLAY: IGNORES STATIC TEXT LABEL */}
+                                        <span className="text-xs font-bold uppercase tracking-wide">{pkg.credits} Neural Credits</span>
                                     </div>
 
                                     <ul className="space-y-3 mb-8 flex-1 px-2">
@@ -335,7 +336,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, curre
                             <div>
                                 <h4 className="font-bold text-gray-900 text-lg">{selectedPkg.name} Package</h4>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-xs font-medium bg-white px-2 py-0.5 rounded border border-gray-200 text-gray-600">{selectedPkg.credit_label}</span>
+                                    <span className="text-xs font-medium bg-white px-2 py-0.5 rounded border border-gray-200 text-gray-600">{selectedPkg.credits} Credits / Month</span>
                                 </div>
                             </div>
                             <div className="text-right">

@@ -58,16 +58,26 @@ export const GlobalConfigPanel: React.FC<GlobalConfigPanelProps> = ({ onToast })
         setLoading(true);
         try {
             const updates = [
-                { key: 'admin_whatsapp', value: whatsapp, description: 'Admin Contact Number' },
-                { key: 'payment_qr_url', value: qrUrl, description: 'DuitNow QR Image URL' },
-                { key: 'region_config', value: JSON.stringify(regions), description: 'Regional Gateway Status JSON' },
-                { key: 'feature_flags', value: JSON.stringify(flags), description: 'Global Feature Toggles JSON' }
+                { key: 'admin_whatsapp', value: whatsapp },
+                { key: 'payment_qr_url', value: qrUrl },
+                { key: 'region_config', value: JSON.stringify(regions) },
+                { key: 'feature_flags', value: JSON.stringify(flags) }
             ];
 
-            const { error } = await supabase.from('system_settings').upsert(updates);
-            if (error) throw error;
+            // FIX: Iterate and call RPC for each setting to bypass RLS
+            for (const update of updates) {
+                const { error } = await supabase.rpc('admin_update_setting', { 
+                    p_key: update.key, 
+                    p_value: update.value 
+                });
+                if (error) throw error;
+            }
+
             onToast("Global Configuration Saved", 'success');
-        } catch (e: any) { onToast(e.message, 'error'); }
+        } catch (e: any) { 
+            console.error("Save Error:", e);
+            onToast(e.message || "Failed to save settings", 'error'); 
+        }
         finally { setLoading(false); }
     };
 

@@ -57,7 +57,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
   const [showAutofillNotice, setShowAutofillNotice] = useState(false);
   
   const [formData, setFormData] = useState<FormData>({
-    productName: '', coreBenefits: '', targetAudience: '', language: Language.MALAY,
+    productName: '', coreBenefits: '', targetAudience: '', language: Language.MALAY_CASUAL,
     tone: Tone.KAKAK_VIBE, contentFormat: ContentFormat.INSTAGRAM_POST, image: null, useThinking: false
   });
 
@@ -268,7 +268,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       if (capacityPercent < 20) colorClass = "bg-white shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse";
 
       return (
-          <div onClick={() => setIsWalletOpen(true)} className="cursor-pointer group mt-4 w-full max-w-md select-none">
+          <div onClick={() => setIsWalletOpen(true)} className="cursor-pointer group mt-4 w-full max-w-md select-none px-4 md:px-0">
               <div className="flex justify-between items-end mb-1 px-1">
                   <span className="text-[10px] font-bold text-orange-100 uppercase tracking-widest flex items-center gap-1 group-hover:text-white transition-colors">
                       <Zap className="w-3 h-3 fill-current" /> Neural Capacity
@@ -307,7 +307,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                </div>
                <div className="flex items-center gap-2 pt-2">
                   <button onClick={() => setIsWalletOpen(true)} className="flex items-center px-3 py-1.5 rounded-full bg-green-600 hover:bg-green-700 border border-white/5 shadow-sm">
-                      <CreditCard className="w-4 h-4 text-white" /><span className="text-[10px] font-bold text-white hidden md:inline ml-2">TOP UP / RENEW</span>
+                      <CreditCard className="w-4 h-4 text-white" /><span className="text-[10px] font-bold text-white hidden md:inline ml-2">TOP UP</span>
                   </button>
                   <button onClick={() => setIsHistoryOpen(true)} className="flex items-center px-3 py-1.5 rounded-full bg-black/20 hover:bg-black/30 border border-white/5"><Database className="w-4 h-4 text-white/80" /><span className="text-[10px] font-bold text-white/90 hidden md:inline ml-2">VAULT</span></button>
                   <button onClick={onLogout} className="flex items-center px-3 py-1.5 rounded-full bg-black/20 hover:bg-red-500/80 border border-white/5"><LogOut className="w-4 h-4 text-white/80" /></button>
@@ -326,7 +326,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
 
                <NeuralCapacityBar />
 
-               <div className="mt-6 flex flex-col items-center w-full max-w-md gap-3">
+               <div className="mt-6 flex flex-col items-center w-full max-w-md gap-3 px-4 md:px-0">
                    <button onClick={() => setIsAffiliateOpen(true)} className="w-full bg-white text-orange-600 hover:bg-orange-50 font-bold py-2.5 rounded-xl shadow-lg border border-white/50 flex items-center justify-center gap-2 text-sm transition-transform active:scale-95 group"><DollarSign className="w-4 h-4 group-hover:animate-bounce" /> Affiliate Dashboard</button>
                </div>
            </div>
@@ -335,7 +335,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       <main className="max-w-6xl mx-auto px-4 md:px-8 relative z-20 -mt-8 space-y-8">
           {activeBroadcast && <div className="flex justify-center -mt-6 animate-fade-in"><div className="bg-blue-50 border border-blue-300 rounded-xl p-4 flex gap-3 text-blue-900 shadow-lg"><Megaphone className="w-5 h-5" /><div><h4 className="font-bold text-sm uppercase">{activeBroadcast.title}</h4><p className="text-xs">{activeBroadcast.message}</p></div><button onClick={() => setActiveBroadcast(null)}><X className="w-4 h-4"/></button></div></div>}
           
-          <div className="flex justify-center z-40 my-4 px-2">
+          <div className="flex justify-center z-40 my-4 px-0 md:px-2">
              <div className="w-full max-w-4xl bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-gray-200/60 relative">
                 <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white/90 to-transparent pointer-events-none rounded-r-2xl z-10 md:hidden"></div>
                 
@@ -413,7 +413,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                     className="w-full max-w-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-500/30 mt-6 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-1 active:scale-95"
                 >
                     {isMagicFilling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    Generate Details <span className="opacity-80 ml-1 text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1"><Zap className="w-3 h-3 fill-current text-yellow-300" /> Low Energy</span>
+                    Generate Details <span className="opacity-80 ml-1 text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1"><Zap className="w-3 h-3 fill-current text-yellow-300" /> Neural Energy</span>
                 </button>
             </div>
           )}
@@ -518,7 +518,7 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
                                 disabled={!featureFlags.enable_text}
                                 className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 hover:scale-[1.02] ${featureFlags.enable_text ? 'bg-orange-600 hover:bg-orange-700 text-white hover:shadow-orange-500/30' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                             >
-                                {featureFlags.enable_text ? <><Sparkles className="w-5 h-5 fill-white animate-pulse" /> GENERATE (⚡ Standard Energy)</> : <><Construction className="w-5 h-5"/> System Maintenance</>}
+                                {featureFlags.enable_text ? <><Sparkles className="w-5 h-5 fill-white animate-pulse" /> TAAP NOW (Generate)</> : <><Construction className="w-5 h-5"/> System Maintenance</>}
                             </button>
                         )}
                     </div>
@@ -546,8 +546,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} config={dynamicConfig} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onRestore={handleRestoreFromHistory} />
       <AffiliateModal isOpen={isAffiliateOpen} onClose={() => setIsAffiliateOpen(false)} licenseKey={licenseKey} />
-      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message={`This action will deduct ${dynamicConfig.costPerGen} credits.`} confirmText="Yes, Proceed" />
-      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message={`This function will use ${dynamicConfig.autofillCost} credits.`} confirmText="Yes, Auto-Fill" />
+      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message="This action will consume Neural Energy from your battery." confirmText="Yes, Proceed" />
+      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message="This action will consume Neural Energy from your battery." confirmText="Yes, Auto-Fill" />
     
     </div>
   );

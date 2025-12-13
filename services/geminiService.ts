@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
 import { supabase } from "./supabaseClient";
-import { FormData, GeneratedContent, Tone, ContentFormat, ImageGenerationParams, GeneratedImage, VideoGenerationParams, ImageData } from "../types";
+import { FormData, GeneratedContent, Tone, ContentFormat, ImageGenerationParams, GeneratedImage, VideoGenerationParams, ImageData, Language } from "../types";
 
 // --- SCHEMAS ---
 const analysisSchema = {
@@ -69,6 +69,36 @@ const validateApiKey = () => {
     if (!key || key.length < 10) throw new Error("API Key missing.");
 };
 
+// --- LANGUAGE CONTROLLER ---
+const getLanguageInstruction = (lang: string): string => {
+    switch (lang) {
+        case Language.MALAY_BAKU:
+            return "STRICTLY use standard, formal Bahasa Melayu (Bahasa Baku/Dewan Bahasa). Grammar must be perfect. No slang, no English mix. Professional, textbook tone.";
+        case Language.MALAY_CASUAL:
+            return "Use conversational, everyday Bahasa Melayu (Bahasa Pasar). Friendly and approachable. Use common particles like 'je', 'ke', 'tak', 'ni'. Minimize English mixing, keep it natural for locals.";
+        case Language.MALAY_ROJAK:
+            return "Heavily mix Bahasa Melayu and English (Manglish). This is for a Malaysian mass market. Use terms like 'best giler', 'power', 'bossku', 'guane', 'confirm', 'steady'. Make it sound like a local chatting at a mamak.";
+        case Language.MALAY_GEN_Z:
+            return "Use current Gen Z / TikTok viral slang. Terms like 'healing', 'betul-betul', 'fuh', 'padu', 'mantap', 'member', 'racun', 'slay', 'vibes'. High energy, short sentences, viral style.";
+        case Language.MALAY_UTARA:
+            return "STRICTLY use Northern Malay Dialect (Loghat Utara - Kedah/Penang). Use words like 'hang' (awak), 'cegah', 'kupang', 'awaaat', 'depa', 'pi', 'sat', 'ketaq'.";
+        case Language.MALAY_KELATE:
+            return "STRICTLY use East Coast Dialect (Loghat Kelate/Ganu). Use words like 'demo', 'kawe', 'bakpo', 'guane', 'dok', 'mung', 'hok ni', 'molep'.";
+        case Language.ENGLISH_PRO:
+            return "STRICTLY Standard International English. Professional, grammatically correct, sophisticated vocabulary. Suitable for corporate/luxury audience.";
+        case Language.ENGLISH_CASUAL:
+            return "Malaysian Colloquial English (Manglish). Use 'lah', 'meh', 'can', 'one', 'got', 'walao'. Simple, direct, and local-friendly.";
+        case Language.INDONESIA:
+            return "Bahasa Indonesia Gaul (Jakarta style). Use 'gue', 'elo', 'banget', 'sih', 'dong', 'yuk', 'bisa', 'gimana'. Very conversational and trendy for Indonesian market.";
+        case Language.MANDARIN_MY:
+            return "Mandarin Chinese suited for Malaysia. Can mix slightly with Malay/English terms common in Malaysia (e.g. 'Duit', 'Saman', 'Pasar') if necessary for context, but primarily Mandarin.";
+        case Language.TAMIL_MY:
+            return "Tamil Language suited for Malaysia. Casual tone.";
+        default:
+            return "Use the primary language of the product name and description, optimized for a Malaysian audience.";
+    }
+};
+
 // --- PROMPT ENGINEERING ENGINE ---
 const enhancePrompt = (type: 'image' | 'video' | 'text', baseInput: string, context?: any): string => {
     if (type === 'image') {
@@ -90,16 +120,16 @@ Lighting: Volumetric lighting, high dynamic range.
     }
 
     if (type === 'text') {
-        // Context: { productName, coreBenefits, targetAudience, tone, trends, isHuman }
-        const { productName, coreBenefits, targetAudience, tone, trends, isHuman } = context;
+        // Context: { productName, coreBenefits, targetAudience, tone, trends, isHuman, language }
+        const { productName, coreBenefits, targetAudience, tone, trends, isHuman, language } = context;
         
+        const languageRule = getLanguageInstruction(language);
         let personaInstruction = "";
         
         if (isHuman) {
             personaInstruction = `
-CRITICAL PERSONA: You are a professional Malaysian Copywriter ("Sifu Marketing") who speaks fluent 'Bahasa Rojak'.
-LANGUAGE STYLE: Natural, conversational, and authentic. Use particles like 'lah', 'kan', 'tu', 'ni', 'guys', 'best'.
-AVOID: Robotic phrasing, standard formal textbook Malay (Baku), or stiff sentences.
+CRITICAL PERSONA: You are a professional Malaysian Copywriter ("Sifu Marketing") who is a master of local dialects and slang.
+LANGUAGE STYLE: Natural, conversational, and authentic.
 TONE: ${tone} (Make it sound exactly like this persona).
             `;
         } else {
@@ -112,6 +142,10 @@ TONE: ${tone}.
 
         return `
 ${personaInstruction}
+
+CRITICAL LANGUAGE INSTRUCTION:
+${languageRule}
+(Verify your output matches this language style strictly. Do not deviate.)
 
 TASK: Generate high-impact social media content for:
 Product: ${productName}
