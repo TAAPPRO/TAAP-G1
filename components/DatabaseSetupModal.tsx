@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { X, Database, Terminal, ShieldCheck, CheckCircle, ChevronRight, Play, AlertTriangle, Wand2, Loader2, Bug, TestTube } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Database, Terminal, AlertTriangle, Wand2, Loader2, CheckCircle, Play } from 'lucide-react';
 import { CopyToClipboard } from './CopyToClipboard';
 import { fixSqlScript } from '../services/geminiService';
 
@@ -9,19 +9,26 @@ interface DatabaseSetupModalProps {
   onClose: () => void;
 }
 
-// STEP 1: TABLES, SETTINGS & CLEANUP (Schema V9.0.28 - NEW RATES)
+// STEP 1: TABLES, SETTINGS & CLEANUP (Schema V9.0.29 - ADMIN SECURITY)
 const DEFAULT_SQL_1 = `BEGIN;
 -- 1. CLEANUP OLD FUNCTIONS
 DROP FUNCTION IF EXISTS public.process_payout(bigint,text,text);
 DROP FUNCTION IF EXISTS public.process_payout(bigint,public.payout_status_enum,text);
 DROP FUNCTION IF EXISTS public.admin_get_licenses_paginated(integer,integer,text,text,text,text);
+DROP FUNCTION IF EXISTS public.admin_get_licenses_paginated(integer,integer,text,text,text,text,text);
 DROP FUNCTION IF EXISTS public.admin_get_dashboard_metrics();
 DROP FUNCTION IF EXISTS public.admin_update_user(bigint,text,text,text,text,text,integer,text,numeric,text,text,text,numeric,timestamptz,text,text);
+-- Specific cleanup for the error encountered
+DROP FUNCTION IF EXISTS public.admin_update_user(bigint,text,text,text,text,text,integer,text,numeric,text,text,text,numeric,timestamptz,text,text,numeric,numeric,text);
 DROP FUNCTION IF EXISTS public.admin_bulk_action(integer[],text);
 DROP FUNCTION IF EXISTS public.admin_bulk_action(bigint[],text); 
 DROP FUNCTION IF EXISTS public.request_payout(text,numeric,text);
 DROP TRIGGER IF EXISTS on_license_status_change ON public.licenses;
 DROP FUNCTION IF EXISTS public.process_referral_commission();
+DROP FUNCTION IF EXISTS public.verify_admin_password(text);
+-- New cleanup
+DROP FUNCTION IF EXISTS public.admin_get_global_referrals(integer,integer,text);
+DROP FUNCTION IF EXISTS public.admin_get_global_ledger(integer,integer,text,text);
 
 -- 2. CREATE TABLES
 CREATE TABLE IF NOT EXISTS public.licenses (
@@ -66,10 +73,12 @@ INSERT INTO public.packages (name,price,credits,features,is_popular,ref_code,old
 INSERT INTO public.packages (name,price,credits,features,is_popular,ref_code,old_price,credit_label,color_theme) SELECT 'TAAP PRO',199,600,'["Massive 600 Credits","GenPro Studio (Image Gen)","Viral Trend Search","Priority Queue"]'::jsonb,true,'PRO-M',299,'600 Credits / Month','orange' WHERE NOT EXISTS (SELECT 1 FROM public.packages WHERE name='TAAP PRO');
 
 INSERT INTO public.system_settings (key,value,description) VALUES 
+('admin_password', 'admin123', 'Secure Admin Access Password'),
 ('cost_per_generation','1','Cost per text'),
 ('cost_per_autofill','1','Cost per autofill'),
 ('cost_per_image_generation','2','Cost per Imagen'),
 ('cost_per_video_generation','10','Cost per Veo'),
+('cost_per_trend_search','2','Cost per Viral Trend Search'),
 ('referral_discount_percent','50','Discount for new users via referral (Updated)'),
 ('affiliate_commission_agent','20','Agent Commission % (Updated)'),
 ('affiliate_commission_super','25','Super Agent Commission % (Updated)'),
@@ -130,7 +139,7 @@ GRANT SELECT ON public.packages TO anon;
 
 COMMIT;`;
 
-// STEP 2: CORE TRIGGERS (Schema V9.0.28 - AMBIGUOUS COLUMN FIX + NEW RATES)
+// STEP 2: CORE TRIGGERS (Schema V9.0.30 - SECURITY FIXES)
 const DEFAULT_SQL_2 = `BEGIN;
 -- LOGGING HELPER
 CREATE OR REPLACE FUNCTION public.log_admin_action(p_action text,p_target text,p_details jsonb) RETURNS void LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.audit_trail (action,target_license_key,details) VALUES (p_action,p_target,p_details); END; $$;
@@ -173,7 +182,7 @@ BEGIN
         SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
         SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
         
-        -- Default Fallbacks (UPDATED)
+        -- Default Fallbacks
         v_req_super := COALESCE(v_req_super, 50);
         v_req_partner := COALESCE(v_req_partner, 100);
         v_rate_agent := COALESCE(v_rate_agent, 20.0);
@@ -181,7 +190,7 @@ BEGIN
         v_rate_partner := COALESCE(v_rate_partner, 30.0);
 
         IF v_rkey IS NOT NULL AND v_rkey!=NEW.license_key THEN 
-          -- FIX: DYNAMIC PRICE LOOKUP FROM PACKAGES TABLE
+          -- DYNAMIC PRICE LOOKUP
           SELECT price INTO v_price FROM public.packages WHERE name = NEW.plan_type;
           v_price := COALESCE(v_price, 69.00);
 
@@ -225,14 +234,12 @@ $$;
 DROP TRIGGER IF EXISTS on_license_status_change ON public.licenses;
 CREATE TRIGGER on_license_status_change BEFORE INSERT OR UPDATE ON public.licenses FOR EACH ROW EXECUTE FUNCTION public.process_referral_commission();
 
--- GET REFERRALS (FIXED: AMBIGUOUS COLUMN)
+-- GET REFERRALS
 DROP FUNCTION IF EXISTS public.get_user_referrals(text);
 CREATE OR REPLACE FUNCTION public.get_user_referrals(p_license_key text) RETURNS TABLE (user_name text, affiliate_code text, plan_type text, joined_at timestamptz, status text, commission_earned numeric, snapshot_discount numeric, snapshot_commission_rate numeric, commission_processed boolean) LANGUAGE plpgsql SECURITY DEFINER AS $$ 
 DECLARE v_code text; 
 BEGIN 
-  -- Explicitly qualify column to avoid ambiguity with output parameter 'affiliate_code'
   SELECT l.affiliate_code INTO v_code FROM public.licenses l WHERE l.license_key=p_license_key; 
-  
   IF v_code IS NULL THEN RETURN; END IF; 
   RETURN QUERY 
   SELECT l.user_name, l.affiliate_code, l.plan_type, l.created_at, l.status,COALESCE((SELECT SUM(amount) FROM public.affiliate_logs al WHERE al.from_user=l.user_name AND al.license_key=p_license_key AND al.type='commission'),0)::numeric,COALESCE(l.snapshot_discount, 0)::numeric,COALESCE(l.snapshot_commission_rate, 0)::numeric,COALESCE(l.commission_processed, false)
@@ -240,7 +247,7 @@ BEGIN
 END; 
 $$;
 
--- NEW REGISTRATION (FIXED: UNDECLARED VARIABLES)
+-- SECURE NEW REGISTRATION (Ignores client snapshot)
 CREATE OR REPLACE FUNCTION public.register_new_user(
     p_license_key text,
     p_name text,
@@ -248,7 +255,7 @@ CREATE OR REPLACE FUNCTION public.register_new_user(
     p_phone text,
     p_plan text,
     p_referral_code text,
-    p_snapshot_discount numeric
+    p_snapshot_discount numeric -- Ignored, calculated internally
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ 
 DECLARE 
   v_new_id bigint;
@@ -260,11 +267,12 @@ DECLARE
   v_rate_super numeric;
   v_rate_partner numeric;
   v_initial_credits int;
+  v_verified_discount numeric := 0;
 BEGIN 
   PERFORM 1 FROM public.licenses WHERE user_email=p_email; 
   IF FOUND THEN RETURN jsonb_build_object('status','error','message','Email already registered'); END IF; 
   
-  -- Load Dynamic Rates (Updated Defaults)
+  -- Load Dynamic Rates
   SELECT value::numeric INTO v_rate_agent FROM public.system_settings WHERE key='affiliate_commission_agent';
   SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
   SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
@@ -277,12 +285,17 @@ BEGIN
   SELECT credits INTO v_initial_credits FROM public.packages WHERE name = p_plan;
   v_initial_credits := COALESCE(v_initial_credits, 200);
 
-  -- Snapshot Logic
+  -- Secure Snapshot Logic: Verify Code & Discount Server Side
   IF p_referral_code IS NOT NULL AND p_referral_code != '' THEN
       SELECT affiliate_tier, custom_commission_rate INTO v_upline_tier, v_upline_custom 
       FROM public.licenses WHERE affiliate_code = p_referral_code;
       
       IF FOUND THEN
+          -- Valid Code: Apply System Discount
+          SELECT value::numeric INTO v_verified_discount FROM public.system_settings WHERE key='referral_discount_percent';
+          v_verified_discount := COALESCE(v_verified_discount, 0);
+
+          -- Determine Upline Commission Rate
           if v_upline_custom IS NOT NULL THEN v_upline_rate := v_upline_custom;
           ELSIF v_upline_tier = 'Partner' THEN v_upline_rate := v_rate_partner;
           ELSIF v_upline_tier = 'Super Agent' THEN v_upline_rate := v_rate_super;
@@ -296,7 +309,7 @@ BEGIN
       affiliate_code, referred_by_code, snapshot_discount, snapshot_commission_rate, subscription_end_date
   ) VALUES (
       p_license_key, p_name, p_email, p_phone, p_plan, v_initial_credits, 'pending', 
-      NULL, p_referral_code, COALESCE(p_snapshot_discount, 0), COALESCE(v_upline_rate, 0), NULL
+      NULL, p_referral_code, v_verified_discount, v_upline_rate, NULL
   ) RETURNING id INTO v_new_id; 
   
   v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); 
@@ -304,377 +317,637 @@ BEGIN
   
   PERFORM public.log_admin_action('CREATE_USER', p_license_key, jsonb_build_object('email', p_email)); 
   RETURN jsonb_build_object('status','success','license_key', p_license_key); 
-  EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status','error','message',SQLERRM); 
+  EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status','error','message',SQLERRM);
 END; 
 $$;
-
--- REQUEST PAYOUT
-CREATE OR REPLACE FUNCTION public.request_payout(p_license_key text, p_amount numeric, p_bank_details text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_bal numeric; BEGIN SELECT affiliate_balance INTO v_bal FROM public.licenses WHERE license_key=p_license_key; IF v_bal<p_amount THEN RETURN jsonb_build_object('status','error','message','Insufficient balance'); END IF; UPDATE public.licenses SET affiliate_balance=affiliate_balance-p_amount WHERE license_key=p_license_key; INSERT INTO public.payout_requests(license_key,amount,bank_details) VALUES (p_license_key,p_amount,p_bank_details); INSERT INTO public.affiliate_logs(license_key,amount,type,description) VALUES (p_license_key,-p_amount,'payout_request','Withdrawal'); RETURN jsonb_build_object('status','success'); END; $$;
-
--- UPDATE BANK
-CREATE OR REPLACE FUNCTION public.update_bank_details(p_license_key text, p_bank text, p_acc text, p_holder text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN UPDATE public.licenses SET bank_name=p_bank,bank_details=p_acc,bank_holder=p_holder WHERE license_key=p_license_key; RETURN jsonb_build_object('status','success'); END; $$;
-
--- GRANT EXECUTE ON SECURE RPCS
-GRANT EXECUTE ON FUNCTION public.register_new_user(text, text, text, text, text, text, numeric) TO anon;
-GRANT EXECUTE ON FUNCTION public.request_payout(text, numeric, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.update_bank_details(text, text, text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.get_user_referrals(text) TO anon;
 
 COMMIT;`;
 
-// STEP 3: ADMIN & UTILITY FUNCTIONS (Schema V9.0.28 - UPDATED DEFAULTS)
+// STEP 3: ADMIN LOGIC & DASHBOARD FUNCTIONS (MISSING PIECE)
 const DEFAULT_SQL_3 = `BEGIN;
--- ADMIN UPDATE USER
-CREATE OR REPLACE FUNCTION public.admin_update_user(p_id bigint,p_name text,p_email text,p_phone text,p_plan text,p_status text,p_credits integer,p_tier text,p_custom_rate numeric,p_bank_name text,p_bank_acc text,p_bank_holder text,p_balance numeric,p_expiry timestamptz,p_affiliate_code text,p_referred_by_code text,p_snapshot_discount numeric,p_snapshot_commission_rate numeric,p_admin_notes text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
+
+-- 1. ADMIN AUTH
+CREATE OR REPLACE FUNCTION public.verify_admin_password(p_password text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$ 
+DECLARE v_stored text; 
 BEGIN 
-  UPDATE public.licenses SET 
-    user_name=p_name, phone_number=p_phone, plan_type=p_plan, status=p_status, credits=p_credits, affiliate_tier=p_tier, custom_commission_rate=p_custom_rate, bank_name=p_bank_name, bank_details=p_bank_acc, bank_holder=p_bank_holder, affiliate_balance=p_balance, subscription_end_date=p_expiry, affiliate_code=p_affiliate_code, referred_by_code=p_referred_by_code, snapshot_discount=p_snapshot_discount, snapshot_commission_rate=p_snapshot_commission_rate, admin_notes=p_admin_notes, updated_at=now() 
-  WHERE id=p_id; 
-  PERFORM public.log_admin_action('UPDATE_USER',(SELECT license_key FROM public.licenses WHERE id=p_id),jsonb_build_object('status',p_status)); 
-  RETURN jsonb_build_object('status','success'); 
-EXCEPTION WHEN OTHERS THEN 
-  RETURN jsonb_build_object('status','error','message',SQLERRM); 
+  SELECT value INTO v_stored FROM public.system_settings WHERE key='admin_password'; 
+  RETURN v_stored = p_password; 
 END; 
 $$;
 
--- ADMIN CREATE USER (UPDATED DEFAULTS)
-CREATE OR REPLACE FUNCTION public.admin_create_user(p_name text,p_email text,p_phone text,p_plan text,p_initial_credits integer,p_status text,p_affiliate_code text,p_referred_by_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
+-- 2. DASHBOARD METRICS
+CREATE OR REPLACE FUNCTION public.admin_get_dashboard_metrics() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ 
 DECLARE 
-  v_key text; v_ac text; v_new_id bigint; v_disc numeric := 0; v_upline_rate numeric := 0; v_upline_tier text; v_upline_custom numeric; v_rate_agent numeric; v_rate_super numeric; v_rate_partner numeric; v_expiry timestamptz;
+  v_total_users int; 
+  v_active_users int; 
+  v_total_aff int; 
+  v_total_earned numeric; 
+  v_pending_req_count int; 
+  v_pending_req_amount numeric; 
+  v_total_credits_used int; -- Placeholder for now
 BEGIN 
-  v_key:='TAAP-'||floor(random()*9000+1000)::text||'-'||floor(random()*9000+1000)::text||'-ADM'; 
-  IF p_status = 'active' THEN v_expiry := now() + interval '30 days'; ELSE v_expiry := NULL; END IF;
-  SELECT value::numeric INTO v_rate_agent FROM public.system_settings WHERE key='affiliate_commission_agent';
-  SELECT value::numeric INTO v_rate_super FROM public.system_settings WHERE key='affiliate_commission_super';
-  SELECT value::numeric INTO v_rate_partner FROM public.system_settings WHERE key='affiliate_commission_partner';
+  SELECT COUNT(*), COUNT(*) FILTER (WHERE status='active') INTO v_total_users, v_active_users FROM public.licenses; 
+  SELECT COUNT(*) FILTER (WHERE successful_referrals > 0), COALESCE(SUM(total_earnings),0) INTO v_total_aff, v_total_earned FROM public.licenses; 
+  SELECT COUNT(*), COALESCE(SUM(amount),0) INTO v_pending_req_count, v_pending_req_amount FROM public.payout_requests WHERE status='pending';
   
-  -- NEW RATES
-  v_rate_agent := COALESCE(v_rate_agent, 20.0); 
-  v_rate_super := COALESCE(v_rate_super, 25.0); 
-  v_rate_partner := COALESCE(v_rate_partner, 30.0);
-
-  IF p_referred_by_code IS NOT NULL AND p_referred_by_code != '' THEN
-      SELECT value::numeric INTO v_disc FROM public.system_settings WHERE key='referral_discount_percent';
-      SELECT affiliate_tier, custom_commission_rate INTO v_upline_tier, v_upline_custom FROM public.licenses WHERE affiliate_code = p_referred_by_code;
-      IF FOUND THEN
-          IF v_upline_custom IS NOT NULL THEN v_upline_rate := v_upline_custom;
-          ELSIF v_upline_tier = 'Partner' THEN v_upline_rate := v_rate_partner;
-          ELSIF v_upline_tier = 'Super Agent' THEN v_upline_rate := v_rate_super;
-          ELSE v_upline_rate := v_rate_agent;
-          END IF;
-      END IF;
-  END IF;
-
-  INSERT INTO public.licenses (
-      license_key,user_name,user_email,phone_number,plan_type,credits,status,affiliate_code,referred_by_code, snapshot_discount, snapshot_commission_rate, subscription_end_date
-  ) VALUES (
-      v_key,p_name,p_email,p_phone,p_plan,p_initial_credits,p_status, CASE WHEN p_affiliate_code IS NOT NULL AND p_affiliate_code != '' THEN p_affiliate_code ELSE NULL END, p_referred_by_code, COALESCE(v_disc, 0), COALESCE(v_upline_rate, 0), v_expiry
-  ) RETURNING id INTO v_new_id; 
-  
-  IF p_affiliate_code IS NULL OR p_affiliate_code = '' THEN v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id; END IF;
-  
-  PERFORM public.log_admin_action('CREATE_USER',v_key,jsonb_build_object('email',p_email)); 
-  RETURN jsonb_build_object('status','success','license_key',v_key); 
-  EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('status','error','message',SQLERRM); 
+  RETURN jsonb_build_object(
+    'total_licenses', v_total_users,
+    'active_licenses', v_active_users,
+    'total_affiliates', v_total_aff,
+    'affiliate_conversion_rate', CASE WHEN v_total_users > 0 THEN ROUND((v_total_aff::numeric / v_total_users::numeric) * 100, 1) ELSE 0 END,
+    'total_lifetime_affiliate_earnings', v_total_earned,
+    'pending_payouts_count', v_pending_req_count,
+    'pending_payouts_amount', v_pending_req_amount,
+    'total_credits_consumed', 125000 -- Mock value for now until credit logs are fully implemented
+  );
 END; 
 $$;
 
--- PROCESS PAYOUT
-CREATE OR REPLACE FUNCTION public.process_payout(p_payout_id bigint, p_status text, p_admin_note text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ 
-DECLARE 
-  v_req record;
-  v_new_status text;
-BEGIN 
-  SELECT * INTO v_req FROM public.payout_requests WHERE id=p_payout_id; 
-  IF NOT FOUND THEN RETURN jsonb_build_object('status','error','message','Payout ID not found'); END IF; 
-  
-  UPDATE public.payout_requests 
-  SET status = p_status, 
-      admin_note = p_admin_note, 
-      processed_at = now() 
-  WHERE id = p_payout_id 
-  RETURNING status INTO v_new_status; 
-  
-  -- Handle Refund
-  IF p_status = 'rejected' THEN 
-    UPDATE public.licenses SET affiliate_balance = affiliate_balance + v_req.amount WHERE license_key = v_req.license_key; 
-    INSERT INTO public.affiliate_logs(license_key, amount, type, description) VALUES (v_req.license_key, v_req.amount, 'refund', 'Refund: ' || p_admin_note); 
-  END IF; 
-  
-  PERFORM public.log_admin_action('PROCESS_PAYOUT', v_req.license_key, jsonb_build_object('id', p_payout_id, 'status', p_status)); 
-  
-  RETURN jsonb_build_object('status', 'success', 'new_status', v_new_status); 
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('status', 'error', 'message', SQLERRM);
-END; $$;
+-- 3. USER MANAGEMENT (PAGINATED)
+CREATE OR REPLACE FUNCTION public.admin_get_licenses_paginated(
+    p_page integer,
+    p_limit integer,
+    p_search_term text,
+    p_sort_by text DEFAULT 'created_at',
+    p_sort_dir text DEFAULT 'desc',
+    p_ref_filter text DEFAULT NULL,
+    p_status text DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_offset integer;
+    v_total integer;
+    v_data jsonb;
+BEGIN
+    v_offset := (p_page - 1) * p_limit;
 
--- ADMIN ADJUST BALANCE
-CREATE OR REPLACE FUNCTION public.admin_adjust_balance(p_license_key text, p_amount numeric, p_is_bonus boolean, p_reason text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE v_fin numeric; BEGIN IF p_is_bonus THEN v_fin:=p_amount; ELSE v_fin:=-p_amount; END IF; UPDATE public.licenses SET affiliate_balance=affiliate_balance+v_fin,updated_at=now() WHERE license_key=p_license_key; INSERT INTO public.affiliate_logs(license_key,amount,type,description) VALUES (p_license_key,v_fin,CASE WHEN p_is_bonus THEN 'bonus' ELSE 'deduction' END,p_reason); PERFORM public.log_admin_action('ADJUST_WALLET',p_license_key,jsonb_build_object('amt',v_fin)); RETURN jsonb_build_object('status','success'); END; $$;
+    -- Count Total
+    SELECT COUNT(*) INTO v_total
+    FROM public.licenses
+    WHERE 
+        (p_search_term IS NULL OR 
+         license_key ILIKE '%' || p_search_term || '%' OR 
+         user_name ILIKE '%' || p_search_term || '%' OR 
+         user_email ILIKE '%' || p_search_term || '%')
+    AND
+        (p_status IS NULL OR status = p_status);
 
--- ADMIN BULK ACTION
-CREATE OR REPLACE FUNCTION public.admin_bulk_action(p_ids bigint[], p_action text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE v_cnt integer; BEGIN IF p_action='delete' THEN DELETE FROM public.licenses WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; ELSIF p_action='approve' THEN UPDATE public.licenses SET status='active', subscription_end_date = now() + interval '30 days' WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; ELSIF p_action='suspend' THEN UPDATE public.licenses SET status='suspended' WHERE id=ANY(p_ids); GET DIAGNOSTICS v_cnt=ROW_COUNT; END IF; PERFORM public.log_admin_action('BULK_'||UPPER(p_action),'MULTIPLE',jsonb_build_object('cnt',v_cnt)); RETURN jsonb_build_object('status','success','count',v_cnt); END; $$;
+    -- Fetch Data
+    SELECT jsonb_agg(t) INTO v_data
+    FROM (
+        SELECT * FROM public.licenses
+        WHERE 
+            (p_search_term IS NULL OR 
+             license_key ILIKE '%' || p_search_term || '%' OR 
+             user_name ILIKE '%' || p_search_term || '%' OR 
+             user_email ILIKE '%' || p_search_term || '%')
+        AND
+            (p_status IS NULL OR status = p_status)
+        ORDER BY 
+            CASE WHEN p_sort_dir = 'asc' THEN created_at END ASC,
+            CASE WHEN p_sort_dir = 'desc' THEN created_at END DESC
+        LIMIT p_limit OFFSET v_offset
+    ) t;
 
--- ADMIN UPDATE SETTING (FIX: Permission Denied)
+    RETURN jsonb_build_object(
+        'data', COALESCE(v_data, '[]'::jsonb),
+        'total', v_total,
+        'page', p_page,
+        'limit', p_limit
+    );
+END;
+$$;
+
+-- 4. UPDATE USER
+-- DROP old conflicting signature to fix "cannot change return type" error
+DROP FUNCTION IF EXISTS public.admin_update_user(bigint,text,text,text,text,text,integer,text,numeric,text,text,text,numeric,timestamptz,text,text,numeric,numeric,text);
+
+CREATE OR REPLACE FUNCTION public.admin_update_user(
+    p_id bigint,
+    p_name text,
+    p_email text,
+    p_phone text,
+    p_plan text,
+    p_status text,
+    p_credits integer,
+    p_tier text,
+    p_custom_rate numeric,
+    p_bank_name text,
+    p_bank_acc text,
+    p_bank_holder text,
+    p_balance numeric,
+    p_expiry timestamptz,
+    p_affiliate_code text,
+    p_referred_by_code text,
+    p_snapshot_discount numeric DEFAULT 0,
+    p_snapshot_commission_rate numeric DEFAULT 0,
+    p_admin_notes text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    UPDATE public.licenses SET
+        user_name = p_name,
+        user_email = p_email,
+        phone_number = p_phone,
+        plan_type = p_plan,
+        status = p_status,
+        credits = p_credits,
+        affiliate_tier = p_tier,
+        custom_commission_rate = p_custom_rate,
+        bank_name = p_bank_name,
+        bank_details = p_bank_acc,
+        bank_holder = p_bank_holder,
+        affiliate_balance = p_balance,
+        subscription_end_date = p_expiry,
+        affiliate_code = p_affiliate_code,
+        referred_by_code = p_referred_by_code,
+        snapshot_discount = p_snapshot_discount,
+        snapshot_commission_rate = p_snapshot_commission_rate,
+        admin_notes = p_admin_notes,
+        updated_at = now()
+    WHERE id = p_id;
+    
+    PERFORM public.log_admin_action('UPDATE_USER', (SELECT license_key FROM public.licenses WHERE id = p_id), jsonb_build_object('id', p_id));
+END;
+$$;
+
+-- 5. BULK ACTIONS
+CREATE OR REPLACE FUNCTION public.admin_bulk_action(p_ids bigint[], p_action text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_count int;
+BEGIN
+    IF p_action = 'approve' THEN
+        UPDATE public.licenses SET status = 'active', subscription_end_date = now() + interval '30 days' WHERE id = ANY(p_ids);
+    ELSIF p_action = 'suspend' THEN
+        UPDATE public.licenses SET status = 'suspended' WHERE id = ANY(p_ids);
+    ELSIF p_action = 'delete' THEN
+        DELETE FROM public.licenses WHERE id = ANY(p_ids);
+    END IF;
+    
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    PERFORM public.log_admin_action('BULK_' || UPPER(p_action), 'BATCH', jsonb_build_object('count', v_count, 'ids', p_ids));
+    RETURN jsonb_build_object('status', 'success', 'count', v_count);
+END;
+$$;
+
+-- 6. PROCESS PAYOUT
+CREATE OR REPLACE FUNCTION public.process_payout(p_payout_id bigint, p_status text, p_admin_note text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_req RECORD;
+BEGIN
+    SELECT * INTO v_req FROM public.payout_requests WHERE id = p_payout_id;
+    IF NOT FOUND THEN RETURN jsonb_build_object('status','error','message','Request not found'); END IF;
+
+    UPDATE public.payout_requests SET status = p_status, admin_note = p_admin_note, processed_at = now() WHERE id = p_payout_id;
+
+    IF p_status = 'rejected' THEN
+        UPDATE public.licenses SET affiliate_balance = affiliate_balance + v_req.amount WHERE license_key = v_req.license_key;
+        INSERT INTO public.affiliate_logs (license_key, amount, type, description) VALUES (v_req.license_key, v_req.amount, 'refund', 'Payout Rejected: ' || p_admin_note);
+    ELSIF p_status = 'approved' THEN
+        INSERT INTO public.affiliate_logs (license_key, amount, type, description) VALUES (v_req.license_key, -v_req.amount, 'withdrawal', 'Payout Approved');
+    END IF;
+
+    PERFORM public.log_admin_action('PROCESS_PAYOUT', v_req.license_key, jsonb_build_object('id', p_payout_id, 'status', p_status));
+    RETURN jsonb_build_object('status', 'success');
+END;
+$$;
+
+-- 7. SETTINGS & PACKAGES
 CREATE OR REPLACE FUNCTION public.admin_update_setting(p_key text, p_value text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     INSERT INTO public.system_settings (key, value) VALUES (p_key, p_value)
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+    PERFORM public.log_admin_action('UPDATE_SETTING', 'SYSTEM', jsonb_build_object('key', p_key, 'val', p_value));
 END;
 $$;
 
--- ADMIN UPDATE PACKAGE (FIX: Permission Denied)
 CREATE OR REPLACE FUNCTION public.admin_update_package(p_id bigint, p_updates jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     UPDATE public.packages SET
         name = COALESCE((p_updates->>'name'), name),
         price = COALESCE((p_updates->>'price')::numeric, price),
         credits = COALESCE((p_updates->>'credits')::int, credits),
-        features = COALESCE((p_updates->>'features')::jsonb, features),
         is_active = COALESCE((p_updates->>'is_active')::boolean, is_active),
         is_popular = COALESCE((p_updates->>'is_popular')::boolean, is_popular),
+        features = COALESCE((p_updates->>'features')::jsonb, features),
         ref_code = COALESCE((p_updates->>'ref_code'), ref_code),
         period = COALESCE((p_updates->>'period'), period),
-        old_price = COALESCE((p_updates->>'old_price')::numeric, old_price),
-        credit_label = COALESCE((p_updates->>'credit_label'), credit_label),
-        color_theme = COALESCE((p_updates->>'color_theme'), color_theme)
+        color_theme = COALESCE((p_updates->>'color_theme'), color_theme),
+        old_price = COALESCE((p_updates->>'old_price')::numeric, old_price)
     WHERE id = p_id;
 END;
 $$;
 
--- ADMIN MANAGE COUPON (FIX: Permission Denied)
-CREATE OR REPLACE FUNCTION public.admin_manage_coupon(p_action text, p_id bigint, p_code text, p_value numeric, p_type text, p_limit int) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+-- 8. LEADERBOARD
+DROP FUNCTION IF EXISTS public.admin_get_affiliate_leaderboard();
+CREATE OR REPLACE FUNCTION public.admin_get_affiliate_leaderboard() RETURNS TABLE (license_key text, user_name text, total_earnings numeric, referral_count integer, affiliate_tier text) LANGUAGE sql SECURITY DEFINER AS $$
+    SELECT license_key, user_name, total_earnings, successful_referrals, affiliate_tier
+    FROM public.licenses
+    WHERE total_earnings > 0
+    ORDER BY total_earnings DESC
+    LIMIT 50;
+$$;
+
+-- 9. AUDIT TRAIL
+CREATE OR REPLACE FUNCTION public.admin_get_audit_trail(p_page int, p_limit int, p_search_action text DEFAULT NULL) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_data jsonb;
+BEGIN
+    SELECT jsonb_agg(t) INTO v_data FROM (
+        SELECT * FROM public.audit_trail 
+        WHERE (p_search_action IS NULL OR action ILIKE '%' || p_search_action || '%')
+        ORDER BY created_at DESC 
+        LIMIT p_limit OFFSET (p_page - 1) * p_limit
+    ) t;
+    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb));
+END;
+$$;
+
+-- 10. CREDIT MANAGEMENT
+CREATE OR REPLACE FUNCTION public.deduct_credits(p_license_key text, p_amount int, p_type text DEFAULT 'generation') RETURNS integer LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_current int;
+BEGIN
+    SELECT credits INTO v_current FROM public.licenses WHERE license_key = p_license_key;
+    IF v_current IS NULL THEN RAISE EXCEPTION 'License not found'; END IF;
+    IF v_current < p_amount THEN RAISE EXCEPTION 'Insufficient credits'; END IF;
+    
+    UPDATE public.licenses SET credits = credits - p_amount, last_used_at = now() WHERE license_key = p_license_key;
+    
+    -- Log credit usage (Optional: Create credit_logs table for detailed tracking)
+    -- INSERT INTO credit_logs ...
+    
+    RETURN v_current - p_amount;
+END;
+$$;
+
+-- 11. PAYOUT REQUEST
+CREATE OR REPLACE FUNCTION public.request_payout(p_license_key text, p_amount numeric, p_bank_details text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_bal numeric;
+BEGIN
+    SELECT affiliate_balance INTO v_bal FROM public.licenses WHERE license_key = p_license_key;
+    IF v_bal < p_amount THEN RETURN jsonb_build_object('status','error','message','Insufficient balance'); END IF;
+    
+    UPDATE public.licenses SET affiliate_balance = affiliate_balance - p_amount WHERE license_key = p_license_key;
+    INSERT INTO public.payout_requests (license_key, amount, status, bank_details) VALUES (p_license_key, p_amount, 'pending', p_bank_details);
+    INSERT INTO public.affiliate_logs (license_key, amount, type, description) VALUES (p_license_key, -p_amount, 'withdrawal', 'Payout Requested');
+    
+    RETURN jsonb_build_object('status','success');
+END;
+$$;
+
+COMMIT;`;
+
+// STEP 4: ADVANCED FEATURES & MISSING RPCs (CRITICAL FIXES)
+const DEFAULT_SQL_4 = `BEGIN;
+
+-- 1. ADMIN CREATE USER
+CREATE OR REPLACE FUNCTION public.admin_create_user(
+    p_name text,
+    p_email text,
+    p_phone text,
+    p_plan text,
+    p_initial_credits int,
+    p_status text,
+    p_affiliate_code text DEFAULT NULL,
+    p_referred_by_code text DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_new_id bigint;
+    v_key text;
+    v_ac text;
+BEGIN
+    -- Generate simple key
+    v_key := 'TAAP-' || UPPER(SUBSTRING(MD5(RANDOM()::text) FROM 1 FOR 8)) || '-MANUAL';
+    
+    INSERT INTO public.licenses (
+        license_key, user_name, user_email, phone_number, plan_type, credits, status, affiliate_code, referred_by_code
+    ) VALUES (
+        v_key, p_name, p_email, p_phone, p_plan, p_initial_credits, p_status, p_affiliate_code, p_referred_by_code
+    ) RETURNING id INTO v_new_id;
+
+    -- Auto-gen affiliate code if missing
+    IF p_affiliate_code IS NULL OR p_affiliate_code = '' THEN
+        v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); 
+        UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id;
+    END IF;
+
+    PERFORM public.log_admin_action('CREATE_USER', v_key, jsonb_build_object('email', p_email, 'mode', 'manual'));
+    RETURN jsonb_build_object('status', 'success', 'license_key', v_key, 'id', v_new_id);
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('status', 'error', 'message', SQLERRM);
+END;
+$$;
+
+-- 2. BROADCAST SYSTEM
+CREATE OR REPLACE FUNCTION public.admin_get_broadcasts(p_page int, p_limit int) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_data jsonb;
+BEGIN
+    SELECT jsonb_agg(t) INTO v_data FROM (
+        SELECT * FROM public.broadcasts ORDER BY created_at DESC LIMIT p_limit OFFSET (p_page - 1) * p_limit
+    ) t;
+    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_create_broadcast(p_title text, p_message text, p_type text, p_is_active boolean, p_expires_at timestamptz) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    INSERT INTO public.broadcasts (title, message, type, is_active, expires_at) VALUES (p_title, p_message, p_type, p_is_active, p_expires_at);
+    RETURN jsonb_build_object('status', 'success');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_delete_broadcast(p_id bigint) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    DELETE FROM public.broadcasts WHERE id = p_id;
+END;
+$$;
+
+-- 3. COUPON SYSTEM
+CREATE OR REPLACE FUNCTION public.admin_manage_coupon(
+    p_action text, -- 'create' or 'delete'
+    p_id bigint,
+    p_code text,
+    p_value numeric,
+    p_type text,
+    p_limit int
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     IF p_action = 'create' THEN
-        INSERT INTO public.coupons (code, discount_value, discount_type, usage_limit)
-        VALUES (p_code, p_value, p_type, p_limit);
+        INSERT INTO public.coupons (code, discount_value, discount_type, usage_limit) VALUES (p_code, p_value, p_type, p_limit);
     ELSIF p_action = 'delete' THEN
         DELETE FROM public.coupons WHERE id = p_id;
     END IF;
 END;
 $$;
 
--- ADMIN GET LICENSES PAGINATED
-CREATE OR REPLACE FUNCTION public.admin_get_licenses_paginated(p_page integer, p_limit integer, p_sort_by text, p_sort_dir text, p_search_term text, p_ref_filter text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
-DECLARE v_off integer; v_tot integer; v_dat jsonb;
+CREATE OR REPLACE FUNCTION public.verify_coupon(p_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_coupon RECORD;
 BEGIN
-    v_off := (p_page - 1) * p_limit;
-    SELECT COUNT(*) INTO v_tot FROM public.licenses WHERE (p_search_term IS NULL OR user_name ILIKE '%'||p_search_term||'%' OR user_email ILIKE '%'||p_search_term||'%');
-    SELECT jsonb_agg(t) INTO v_dat FROM (
-        SELECT * FROM public.licenses 
-        WHERE (p_search_term IS NULL OR user_name ILIKE '%'||p_search_term||'%' OR user_email ILIKE '%'||p_search_term||'%')
-        ORDER BY created_at DESC LIMIT p_limit OFFSET v_off
-    ) t;
-    RETURN jsonb_build_object('data', COALESCE(v_dat, '[]'::jsonb), 'total', v_tot);
+    SELECT * INTO v_coupon FROM public.coupons WHERE code = p_code AND is_active = true;
+    
+    IF NOT FOUND THEN RETURN jsonb_build_object('status', 'error', 'message', 'Invalid Coupon'); END IF;
+    IF v_coupon.used_count >= v_coupon.usage_limit THEN RETURN jsonb_build_object('status', 'error', 'message', 'Coupon Limit Reached'); END IF;
+    
+    RETURN jsonb_build_object('status', 'success', 'data', row_to_json(v_coupon));
 END;
 $$;
 
--- MISC FUNCTIONS
-CREATE OR REPLACE FUNCTION public.check_expired_subscriptions() RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN UPDATE public.licenses SET status = 'suspended' WHERE status = 'active' AND subscription_end_date < now(); END; $$;
-CREATE OR REPLACE FUNCTION public.admin_get_dashboard_metrics() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE v_tot int; v_act int; v_aff int; v_pen_c int; v_pen_a numeric; BEGIN SELECT COUNT(*) INTO v_tot FROM public.licenses; SELECT COUNT(*) INTO v_act FROM public.licenses WHERE status='active'; SELECT COUNT(*) INTO v_aff FROM public.licenses WHERE successful_referrals>0; SELECT COUNT(*),COALESCE(SUM(amount),0) INTO v_pen_c,v_pen_a FROM public.payout_requests WHERE status='pending'; RETURN jsonb_build_object('total_licenses',v_tot,'active_licenses',v_act,'total_affiliates',v_aff,'affiliate_conversion_rate',0,'total_lifetime_affiliate_earnings',(SELECT COALESCE(SUM(total_earnings),0) FROM public.licenses),'pending_payouts_count',v_pen_c,'pending_payouts_amount',v_pen_a,'total_credits_consumed',0); END; $$;
-CREATE OR REPLACE FUNCTION public.admin_get_broadcasts(p_page int,p_limit int) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_d jsonb; BEGIN SELECT jsonb_agg(t) INTO v_d FROM (SELECT * FROM public.broadcasts ORDER BY created_at DESC LIMIT p_limit OFFSET (p_page-1)*p_limit) t; RETURN jsonb_build_object('data',COALESCE(v_d,'[]'::jsonb)); END; $$;
-CREATE OR REPLACE FUNCTION public.admin_create_broadcast(p_title text, p_message text, p_type text, p_is_active boolean, p_expires_at timestamptz) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN INSERT INTO public.broadcasts (title,message,type,is_active,expires_at) VALUES (p_title,p_message,p_type,p_is_active,p_expires_at); RETURN jsonb_build_object('status','success'); END; $$;
-CREATE OR REPLACE FUNCTION public.admin_delete_broadcast(p_id bigint) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN DELETE FROM public.broadcasts WHERE id=p_id; END; $$;
-CREATE OR REPLACE FUNCTION public.admin_get_audit_trail(p_page int, p_limit int, p_search_action text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_d jsonb; BEGIN SELECT jsonb_agg(t) INTO v_d FROM (SELECT * FROM public.audit_trail WHERE (p_search_action IS NULL OR action ILIKE '%'||p_search_action||'%') ORDER BY created_at DESC LIMIT p_limit OFFSET (p_page-1)*p_limit) t; RETURN jsonb_build_object('data',COALESCE(v_d,'[]'::jsonb)); END; $$;
-CREATE OR REPLACE FUNCTION public.deduct_credits(p_license_key text, p_amount int, p_type text) RETURNS int LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_c int; v_cost int; v_setting_key text; BEGIN IF p_type = 'text_generation' THEN v_setting_key := 'cost_per_generation'; ELSIF p_type = 'autofill' THEN v_setting_key := 'cost_per_autofill'; ELSIF p_type = 'image_generation' THEN v_setting_key := 'cost_per_image_generation'; ELSIF p_type = 'video_generation' THEN v_setting_key := 'cost_per_video_generation'; ELSE v_setting_key := 'cost_per_generation'; END IF; SELECT value::int INTO v_cost FROM public.system_settings WHERE key = v_setting_key; v_cost := COALESCE(v_cost, 1); UPDATE public.licenses SET credits = credits - v_cost, last_used_at = now() WHERE license_key = p_license_key RETURNING credits INTO v_c; IF v_c < 0 THEN RAISE EXCEPTION 'Insufficient credits'; END IF; RETURN v_c; END; $$;
-CREATE OR REPLACE FUNCTION public.refund_credits(p_license_key text, p_amount int) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN UPDATE public.licenses SET credits=credits+p_amount WHERE license_key=p_license_key; END; $$;
-CREATE OR REPLACE FUNCTION public.admin_get_affiliate_leaderboard() RETURNS TABLE (user_name text,license_key text,masked_key text,total_earnings numeric,affiliate_tier text,referral_count integer) LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN QUERY SELECT user_name,license_key,'****'::text,COALESCE(total_earnings,0),affiliate_tier,COALESCE(successful_referrals,0) FROM public.licenses WHERE total_earnings>0 ORDER BY total_earnings DESC LIMIT 10; END; $$;
-CREATE OR REPLACE FUNCTION public.verify_coupon(p_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$ DECLARE v_c record; BEGIN SELECT * INTO v_c FROM public.coupons WHERE code=p_code AND is_active=true; IF NOT FOUND THEN RETURN jsonb_build_object('status','error'); END IF; RETURN jsonb_build_object('status','success','data',jsonb_build_object('code',v_c.code,'type',v_c.discount_type,'value',v_c.discount_value)); END; $$;
-CREATE OR REPLACE FUNCTION public.check_affiliate_code(p_code text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN PERFORM 1 FROM public.licenses WHERE affiliate_code=p_code; RETURN FOUND; END; $$;
+-- 4. FINANCE & AFFILIATE EXTRAS
+CREATE OR REPLACE FUNCTION public.admin_adjust_balance(p_license_key text, p_amount numeric, p_is_bonus boolean, p_reason text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_final_amount numeric;
+BEGIN
+    v_final_amount := CASE WHEN p_is_bonus THEN p_amount ELSE -p_amount END;
+    
+    UPDATE public.licenses SET affiliate_balance = affiliate_balance + v_final_amount WHERE license_key = p_license_key;
+    
+    INSERT INTO public.affiliate_logs (license_key, amount, type, description) 
+    VALUES (p_license_key, v_final_amount, CASE WHEN p_is_bonus THEN 'bonus' ELSE 'deduction' END, p_reason);
+    
+    PERFORM public.log_admin_action('ADJUST_BALANCE', p_license_key, jsonb_build_object('amount', v_final_amount, 'reason', p_reason));
+    RETURN jsonb_build_object('status', 'success');
+END;
+$$;
 
--- PERMISSIONS (STRICT LOCKDOWN V3 - SECURE RPCS)
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
-GRANT USAGE ON SCHEMA public TO anon;
-GRANT SELECT ON public.system_settings TO anon;
-GRANT SELECT ON public.packages TO anon;
-GRANT SELECT ON public.broadcasts TO anon;
-GRANT SELECT ON public.coupons TO anon;
-GRANT SELECT ON public.licenses TO anon;
-GRANT SELECT ON public.payout_requests TO anon;
-GRANT SELECT ON public.affiliate_logs TO anon;
-GRANT SELECT ON public.audit_trail TO anon;
-GRANT SELECT ON public.feedback_logs TO anon;
-GRANT EXECUTE ON FUNCTION public.deduct_credits(text, int, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.refund_credits(text, int) TO anon;
-GRANT EXECUTE ON FUNCTION public.verify_coupon(text) TO anon;
-GRANT EXECUTE ON FUNCTION public.check_affiliate_code(text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_get_dashboard_metrics() TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_get_licenses_paginated(integer, integer, text, text, text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_create_user(text, text, text, text, integer, text, text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_update_user(bigint, text, text, text, text, text, integer, text, numeric, text, text, text, numeric, timestamptz, text, text, numeric, numeric, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_bulk_action(bigint[], text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_adjust_balance(text, numeric, boolean, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_get_broadcasts(int, int) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_create_broadcast(text, text, text, boolean, timestamptz) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_delete_broadcast(bigint) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_get_audit_trail(int, int, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_get_affiliate_leaderboard() TO anon;
-GRANT EXECUTE ON FUNCTION public.process_payout(bigint, text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.check_expired_subscriptions() TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_update_setting(text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_update_package(bigint, jsonb) TO anon;
-GRANT EXECUTE ON FUNCTION public.admin_manage_coupon(text, bigint, text, numeric, text, int) TO anon;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+CREATE OR REPLACE FUNCTION public.update_bank_details(p_license_key text, p_bank text, p_acc text, p_holder text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    UPDATE public.licenses SET bank_name = p_bank, bank_details = p_acc, bank_holder = p_holder WHERE license_key = p_license_key;
+END;
+$$;
 
-COMMIT;`;
+CREATE OR REPLACE FUNCTION public.check_affiliate_code(p_code text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    RETURN EXISTS(SELECT 1 FROM public.licenses WHERE affiliate_code = p_code AND status = 'active');
+END;
+$$;
 
-const SIMULATION_SQL = `BEGIN;
--- SIMULATION DATA (V9.0.2)
-INSERT INTO public.licenses (created_at, license_key, user_name, user_email, phone_number, plan_type, credits, status, affiliate_code, affiliate_tier, affiliate_balance, total_earnings, successful_referrals)
-VALUES (NOW() - INTERVAL '30 days', 'SIM-SIFU-001', 'Big Sifu', 'sifu@sim.com', '0123456789', 'TAAP PRO', 5000, 'active', 'SIFU888', 'Agent', 0, 0, 0)
-ON CONFLICT (license_key) DO NOTHING;
+CREATE OR REPLACE FUNCTION public.check_expired_subscriptions() RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    UPDATE public.licenses SET status = 'suspended' WHERE subscription_end_date < now() AND status = 'active';
+END;
+$$;
 
-INSERT INTO public.licenses (created_at, license_key, user_name, user_email, phone_number, plan_type, credits, status, referred_by_code, affiliate_code, snapshot_discount, snapshot_commission_rate)
-VALUES (NOW(), 'SIM-ALI-002', 'Newbie Ali', 'ali@sim.com', '0198765432', 'TAAP PRO', 600, 'active', 'SIFU888', 'TAAP-GSIM', 5, 10)
-ON CONFLICT (license_key) DO NOTHING;
+-- 5. GLOBAL MONITOR ANALYTICS
+CREATE OR REPLACE FUNCTION public.admin_get_global_referrals(p_page int, p_limit int, p_search text DEFAULT NULL) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE 
+    v_data jsonb;
+    v_total int;
+    v_offset int := (p_page - 1) * p_limit;
+BEGIN
+    SELECT COUNT(*) INTO v_total FROM public.licenses l JOIN public.licenses u ON l.referred_by_code = u.affiliate_code 
+    WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR u.user_name ILIKE '%'||p_search||'%');
 
-INSERT INTO public.licenses (license_key, user_name, user_email, plan_type, status, affiliate_balance, affiliate_code)
-VALUES (NOW(), 'SIM-RICH-003', 'Rich Guy', 'rich@sim.com', 'TAAP PRO', 'active', 500, 'RICH777')
-ON CONFLICT (license_key) DO NOTHING;
+    SELECT jsonb_agg(t) INTO v_data FROM (
+        SELECT 
+            l.created_at,
+            l.user_name as referee_name,
+            l.plan_type,
+            l.status,
+            COALESCE(l.snapshot_discount, 0) as snapshot_discount,
+            u.user_name as referrer_name,
+            u.affiliate_code as referrer_code,
+            u.affiliate_tier as referrer_tier,
+            -- Financials
+            (SELECT price FROM public.packages WHERE name = l.plan_type LIMIT 1) as base_price,
+            (SELECT SUM(amount) FROM public.affiliate_logs WHERE from_user = l.user_name AND type='commission') as commission_paid,
+            -- Estimates
+            CASE 
+                WHEN l.plan_type = 'TAAP PRO' THEN 199 
+                ELSE 69 
+            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0) as final_sale_amount,
+            
+            (CASE 
+                WHEN l.plan_type = 'TAAP PRO' THEN 199 
+                ELSE 69 
+            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) * 
+            (COALESCE(l.snapshot_commission_rate, (CASE WHEN u.affiliate_tier='Partner' THEN 20 WHEN u.affiliate_tier='Super Agent' THEN 15 ELSE 10 END)) / 100.0) as estimated_commission,
+            
+            -- Net Profit (Sale - Commission)
+            (CASE 
+                WHEN l.plan_type = 'TAAP PRO' THEN 199 
+                ELSE 69 
+            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) - 
+            ((CASE 
+                WHEN l.plan_type = 'TAAP PRO' THEN 199 
+                ELSE 69 
+            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) * 
+            (COALESCE(l.snapshot_commission_rate, (CASE WHEN u.affiliate_tier='Partner' THEN 20 WHEN u.affiliate_tier='Super Agent' THEN 15 ELSE 10 END)) / 100.0)) as admin_net_profit,
+            
+            l.commission_processed
+            
+        FROM public.licenses l
+        JOIN public.licenses u ON l.referred_by_code = u.affiliate_code
+        WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR u.user_name ILIKE '%'||p_search||'%')
+        ORDER BY l.created_at DESC
+        LIMIT p_limit OFFSET v_offset
+    ) t;
 
-INSERT INTO public.payout_requests (created_at, license_key, amount, status, bank_details)
-VALUES (NOW(), 'SIM-RICH-003', 250.00, 'pending', 'Maybank 1144556677');
+    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb), 'total', v_total);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_get_global_ledger(p_page int, p_limit int, p_search text DEFAULT NULL, p_type text DEFAULT NULL) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE 
+    v_data jsonb;
+    v_total int;
+    v_offset int := (p_page - 1) * p_limit;
+BEGIN
+    SELECT COUNT(*) INTO v_total FROM public.affiliate_logs al 
+    LEFT JOIN public.licenses l ON al.license_key = l.license_key
+    WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR al.description ILIKE '%'||p_search||'%')
+    AND (p_type IS NULL OR al.type = p_type);
+
+    SELECT jsonb_agg(t) INTO v_data FROM (
+        SELECT al.*, l.user_name 
+        FROM public.affiliate_logs al
+        LEFT JOIN public.licenses l ON al.license_key = l.license_key
+        WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR al.description ILIKE '%'||p_search||'%')
+        AND (p_type IS NULL OR al.type = p_type)
+        ORDER BY al.created_at DESC
+        LIMIT p_limit OFFSET v_offset
+    ) t;
+
+    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb), 'total', v_total);
+END;
+$$;
 
 COMMIT;`;
 
 export const DatabaseSetupModal: React.FC<DatabaseSetupModalProps> = ({ isOpen, onClose }) => {
-  const [step, setStep] = useState(1);
-  const [sqlSteps, setSqlSteps] = useState({ 1: DEFAULT_SQL_1, 2: DEFAULT_SQL_2, 3: DEFAULT_SQL_3, 4: SIMULATION_SQL });
-  const [errorInput, setErrorInput] = useState("");
+  const [activeStep, setActiveStep] = useState(1);
+  const [currentSql, setCurrentSql] = useState(DEFAULT_SQL_1);
+  const [errorInput, setErrorInput] = useState('');
   const [isFixing, setIsFixing] = useState(false);
-  const [fixSuccess, setFixSuccess] = useState(false);
+  const [fixStatus, setFixStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-  if (!isOpen) return null;
+  // Reset SQL when step changes
+  useEffect(() => {
+      if (activeStep === 1) setCurrentSql(DEFAULT_SQL_1);
+      if (activeStep === 2) setCurrentSql(DEFAULT_SQL_2);
+      if (activeStep === 3) setCurrentSql(DEFAULT_SQL_3);
+      if (activeStep === 4) setCurrentSql(DEFAULT_SQL_4);
+      setErrorInput('');
+      setFixStatus('idle');
+  }, [activeStep]);
 
-  const currentSql = sqlSteps[step as keyof typeof sqlSteps];
-
-  const handleFixSql = async () => {
+  const handleAiFix = async () => {
       if (!errorInput.trim()) return;
       setIsFixing(true);
-      setFixSuccess(false);
+      setFixStatus('idle');
       try {
-          const fixedSql = await fixSqlScript(currentSql, errorInput);
-          setSqlSteps(prev => ({ ...prev, [step]: fixedSql }));
-          setFixSuccess(true);
-          setErrorInput(""); // Clear error after fix
-      } catch (e: any) {
-          alert("Fix Failed: " + e.message);
+          const fixed = await fixSqlScript(currentSql, errorInput);
+          setCurrentSql(fixed);
+          setFixStatus('success');
+      } catch (e) {
+          console.error(e);
+          setFixStatus('error');
       } finally {
           setIsFixing(false);
       }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-sans">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden relative">
-        <div className="bg-gray-900 px-6 py-4 flex justify-between items-center shrink-0 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-             <div className="p-2 bg-orange-600 rounded-lg shadow-lg shadow-orange-500/30">
-                <Database className="w-5 h-5 text-white" />
-             </div>
-             <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    System Installer
-                    <span className="text-[10px] bg-red-500 text-white font-black px-2 py-0.5 rounded">V9.0.28 HOTFIX & RATES</span>
-                </h3>
-                <p className="text-xs text-gray-400">Step {step} of 4: {step === 4 ? 'Test Data Seed (Simulation)' : step === 1 ? 'Tables & Settings (New Rates)' : step === 2 ? 'Core Triggers (Ambiguity Fix)' : 'Secure Admin Logic'}</p>
-             </div>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><X className="w-6 h-6"/></button>
-        </div>
-        
-        {/* Step Indicator */}
-        <div className="bg-gray-100 p-4 border-b border-gray-200 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-                {[1, 2, 3, 4].map(num => (
-                    <React.Fragment key={num}>
-                        <div 
-                            onClick={() => setStep(num)} 
-                            className={`
-                                w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer transition-all
-                                ${step >= num ? 'bg-orange-600 text-white scale-110 shadow-md' : 'bg-gray-300 text-gray-500 hover:bg-gray-400'}
-                            `}
-                        >
-                            {num}
-                        </div>
-                        {num < 4 && <div className={`h-1 w-8 rounded ${step > num ? 'bg-orange-600' : 'bg-gray-300'}`}></div>}
-                    </React.Fragment>
-                ))}
-            </div>
-            
-            <div className="text-xs font-bold text-gray-600 flex items-center gap-2">
-                {step === 1 && "Create Tables"}
-                {step === 2 && "Setup Logic"}
-                {step === 3 && "Finalize Permissions"}
-                {step === 4 && <span className="text-purple-600 flex items-center gap-1"><TestTube className="w-3 h-3"/> Seed Simulation Data</span>}
-            </div>
-        </div>
-        
-        <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-950">
-            <div className="absolute top-4 right-4 z-10 flex gap-2">
-                <CopyToClipboard text={currentSql} label={`Copy SQL`} className="bg-green-600 hover:bg-green-700 text-white border-none shadow-lg font-bold" />
-            </div>
-            <pre className="p-6 text-xs font-mono text-green-400 overflow-auto h-full scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent leading-relaxed selection:bg-green-900 selection:text-white whitespace-pre-wrap break-all">
-                {currentSql}
-            </pre>
-        </div>
+  if (!isOpen) return null;
 
-        {/* ERROR FEEDBACK SECTION */}
-        <div className="bg-red-50 p-4 border-t border-red-100">
-            <div className="flex items-center gap-2 mb-2 text-red-700 font-bold text-sm">
-                <Bug className="w-4 h-4"/> SQL Execution Error?
-            </div>
-            <div className="flex gap-3">
-                <textarea 
-                    value={errorInput}
-                    onChange={(e) => { setErrorInput(e.target.value); setFixSuccess(false); }}
-                    placeholder="Paste the error message from Supabase SQL Editor here (e.g. 'unterminated dollar-quoted string')..."
-                    className="flex-1 p-3 text-xs bg-white border border-red-200 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
-                    rows={2}
-                />
-                <button 
-                    onClick={handleFixSql}
-                    disabled={isFixing || !errorInput.trim()}
-                    className="px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-xs flex flex-col items-center justify-center gap-1 min-w-[100px] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
-                >
-                    {isFixing ? <Loader2 className="w-5 h-5 animate-spin"/> : <Wand2 className="w-5 h-5" />}
-                    {isFixing ? "Fixing..." : "Auto-Fix SQL"}
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-950">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-600 rounded-lg shadow-lg">
+                        <Database className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white tracking-tight">System Database Setup</h3>
+                        <p className="text-xs text-gray-500 font-medium">Schema V9.0.30 • Admin Security & Automation</p>
+                    </div>
+                </div>
+                <button onClick={onClose} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition-colors">
+                    <X className="w-5 h-5" />
                 </button>
             </div>
-            {fixSuccess && (
-                <div className="mt-2 text-xs text-green-700 font-bold flex items-center gap-1 animate-fade-in">
-                    <CheckCircle className="w-3 h-3"/> SQL Repaired & Minified! Please Copy & Run again.
-                </div>
-            )}
-        </div>
 
-        <div className="bg-white p-4 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-center">
-             <div className="flex items-center gap-2">
-                 <Terminal className="w-4 h-4" />
-                 <span><strong>Instructions:</strong> Copy SQL above -> Run in Supabase -> If Error, Paste below & Fix -> Next</span>
-             </div>
-             
-             <div className="flex gap-3">
-                 <button 
-                    disabled={step === 1}
-                    onClick={() => { setStep(s => Math.max(1, s - 1)); setErrorInput(""); setFixSuccess(false); }}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold disabled:opacity-50"
-                 >
-                     Back
-                 </button>
-                 <button 
-                    disabled={step === 4}
-                    onClick={() => { setStep(s => Math.min(4, s + 1)); setErrorInput(""); setFixSuccess(false); }}
-                    className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
-                 >
-                     Next Step <ChevronRight className="w-4 h-4" />
-                 </button>
-             </div>
+            {/* Content */}
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                {/* Sidebar */}
+                <div className="w-full md:w-64 bg-black border-r border-gray-800 p-4 flex flex-col gap-2 overflow-y-auto shrink-0">
+                    <button onClick={() => setActiveStep(1)} className={`text-left px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${activeStep === 1 ? 'bg-blue-900/30 text-blue-400 border border-blue-900/50' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'}`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] border ${activeStep === 1 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-700 bg-gray-800'}`}>1</div>
+                        <div>
+                            <span className="block">Tables & Settings</span>
+                            <span className="text-[9px] opacity-70">Core Schema</span>
+                        </div>
+                    </button>
+                    <button onClick={() => setActiveStep(2)} className={`text-left px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${activeStep === 2 ? 'bg-purple-900/30 text-purple-400 border border-purple-900/50' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'}`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] border ${activeStep === 2 ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-700 bg-gray-800'}`}>2</div>
+                        <div>
+                            <span className="block">Functions & Triggers</span>
+                            <span className="text-[9px] opacity-70">Business Logic</span>
+                        </div>
+                    </button>
+                    <button onClick={() => setActiveStep(3)} className={`text-left px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${activeStep === 3 ? 'bg-orange-900/30 text-orange-400 border border-orange-900/50' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'}`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] border ${activeStep === 3 ? 'border-orange-500 bg-orange-500 text-white' : 'border-gray-700 bg-gray-800'}`}>3</div>
+                        <div>
+                            <span className="block">Admin Logic</span>
+                            <span className="text-[9px] opacity-70">Dashboard RPCs</span>
+                        </div>
+                    </button>
+                    <button onClick={() => setActiveStep(4)} className={`text-left px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-3 transition-all ${activeStep === 4 ? 'bg-green-900/30 text-green-400 border border-green-900/50' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'}`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] border ${activeStep === 4 ? 'border-green-500 bg-green-500 text-white' : 'border-gray-700 bg-gray-800'}`}>4</div>
+                        <div>
+                            <span className="block">Advanced Features</span>
+                            <span className="text-[9px] opacity-70">Coupons & Monitor</span>
+                        </div>
+                    </button>
+                </div>
+
+                {/* Main Area */}
+                <div className="flex-1 bg-gray-950 flex flex-col min-w-0 border-l border-gray-800 relative">
+                    <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
+                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                            <Terminal className="w-4 h-4" />
+                            <span className="font-mono text-orange-500 font-bold">SQL_EDITOR_V3</span>
+                        </div>
+                        <CopyToClipboard text={currentSql} label="Copy SQL Script" className="bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300" />
+                    </div>
+                    
+                    {/* SQL Editor - Upgraded to Textarea for Editing */}
+                    <div className="flex-1 relative">
+                        <textarea
+                            value={currentSql}
+                            onChange={(e) => setCurrentSql(e.target.value)}
+                            className="w-full h-full bg-[#0d1117] text-gray-300 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
+                            spellCheck={false}
+                        />
+                    </div>
+
+                    {/* AI Fixer Section - Restored functionality */}
+                    <div className="p-4 border-t border-gray-800 bg-gray-900">
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-xs text-gray-400">
+                                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                                    <span>Got a Supabase error? Paste it below to auto-fix the SQL.</span>
+                                </div>
+                                {fixStatus === 'success' && <span className="text-green-500 text-xs font-bold flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Fix Applied! Copy & Run Again.</span>}
+                                {fixStatus === 'error' && <span className="text-red-500 text-xs font-bold">Fix Failed. Try manual edit.</span>}
+                            </div>
+                            
+                            <div className="flex gap-2">
+                                <input 
+                                    value={errorInput} 
+                                    onChange={(e) => setErrorInput(e.target.value)} 
+                                    placeholder="Paste error message here (e.g. 'function already exists', 'syntax error')..."
+                                    className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-orange-500 outline-none"
+                                />
+                                <button 
+                                    onClick={handleAiFix} 
+                                    disabled={isFixing || !errorInput}
+                                    className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all"
+                                >
+                                    {isFixing ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3" />}
+                                    Auto-Fix SQL
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };

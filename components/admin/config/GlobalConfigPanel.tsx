@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Globe, Smartphone, QrCode, Power, Shield, Loader2, MapPin } from 'lucide-react';
+import { Save, Globe, Smartphone, Power, Loader2, Zap, Coins } from 'lucide-react';
 import { supabase } from '../../../services/supabaseClient';
 
 interface GlobalConfigPanelProps {
@@ -28,6 +28,15 @@ export const GlobalConfigPanel: React.FC<GlobalConfigPanelProps> = ({ onToast })
     const [qrUrl, setQrUrl] = useState('');
     const [regions, setRegions] = useState(DEFAULT_REGIONS);
     const [flags, setFlags] = useState(DEFAULT_FLAGS);
+    
+    // Credit Costs State
+    const [costs, setCosts] = useState({
+        text: 1,
+        autofill: 1,
+        image: 2,
+        video: 10,
+        trend: 2
+    });
 
     useEffect(() => { fetchSettings(); }, []);
 
@@ -49,6 +58,15 @@ export const GlobalConfigPanel: React.FC<GlobalConfigPanelProps> = ({ onToast })
                 if (map['feature_flags']) {
                     try { setFlags({ ...DEFAULT_FLAGS, ...JSON.parse(map['feature_flags']) }); } catch {}
                 }
+
+                // Load Costs
+                setCosts({
+                    text: parseInt(map['cost_per_generation'] || '1'),
+                    autofill: parseInt(map['cost_per_autofill'] || '1'),
+                    image: parseInt(map['cost_per_image_generation'] || '2'),
+                    video: parseInt(map['cost_per_video_generation'] || '10'),
+                    trend: parseInt(map['cost_per_trend_search'] || '2')
+                });
             }
         } catch (e: any) { onToast(e.message, 'error'); }
         finally { setLoading(false); }
@@ -61,10 +79,16 @@ export const GlobalConfigPanel: React.FC<GlobalConfigPanelProps> = ({ onToast })
                 { key: 'admin_whatsapp', value: whatsapp },
                 { key: 'payment_qr_url', value: qrUrl },
                 { key: 'region_config', value: JSON.stringify(regions) },
-                { key: 'feature_flags', value: JSON.stringify(flags) }
+                { key: 'feature_flags', value: JSON.stringify(flags) },
+                // Save Costs
+                { key: 'cost_per_generation', value: costs.text.toString() },
+                { key: 'cost_per_autofill', value: costs.autofill.toString() },
+                { key: 'cost_per_image_generation', value: costs.image.toString() },
+                { key: 'cost_per_video_generation', value: costs.video.toString() },
+                { key: 'cost_per_trend_search', value: costs.trend.toString() }
             ];
 
-            // FIX: Iterate and call RPC for each setting to bypass RLS
+            // Iterate and call RPC for each setting to bypass RLS policies if necessary
             for (const update of updates) {
                 const { error } = await supabase.rpc('admin_update_setting', { 
                     p_key: update.key, 
@@ -130,7 +154,49 @@ export const GlobalConfigPanel: React.FC<GlobalConfigPanelProps> = ({ onToast })
                 </div>
             </div>
 
-            {/* 3. REGIONAL STATUS MANAGER */}
+            {/* 3. NEURAL CREDIT ECONOMICS (NEW) */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Coins className="w-5 h-5 text-yellow-500"/> Neural Credit Economics</h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Text Gen</label>
+                        <div className="relative">
+                            <Zap className="absolute left-2 top-2 w-3 h-3 text-yellow-600"/>
+                            <input type="number" value={costs.text} onChange={e => setCosts({...costs, text: parseInt(e.target.value) || 0})} className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-7 pr-2 text-white text-sm font-mono" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Auto-Fill</label>
+                        <div className="relative">
+                            <Zap className="absolute left-2 top-2 w-3 h-3 text-yellow-600"/>
+                            <input type="number" value={costs.autofill} onChange={e => setCosts({...costs, autofill: parseInt(e.target.value) || 0})} className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-7 pr-2 text-white text-sm font-mono" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Image Gen</label>
+                        <div className="relative">
+                            <Zap className="absolute left-2 top-2 w-3 h-3 text-yellow-600"/>
+                            <input type="number" value={costs.image} onChange={e => setCosts({...costs, image: parseInt(e.target.value) || 0})} className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-7 pr-2 text-white text-sm font-mono" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Veo Video</label>
+                        <div className="relative">
+                            <Zap className="absolute left-2 top-2 w-3 h-3 text-yellow-600"/>
+                            <input type="number" value={costs.video} onChange={e => setCosts({...costs, video: parseInt(e.target.value) || 0})} className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-7 pr-2 text-white text-sm font-mono" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Trend Search</label>
+                        <div className="relative">
+                            <Zap className="absolute left-2 top-2 w-3 h-3 text-yellow-600"/>
+                            <input type="number" value={costs.trend} onChange={e => setCosts({...costs, trend: parseInt(e.target.value) || 0})} className="w-full bg-black border border-gray-700 rounded-lg py-2 pl-7 pr-2 text-white text-sm font-mono" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* 4. REGIONAL STATUS MANAGER */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-white font-bold flex items-center gap-2"><Globe className="w-5 h-5 text-orange-500"/> Regional Gateway Status</h3>

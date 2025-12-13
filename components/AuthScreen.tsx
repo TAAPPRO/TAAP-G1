@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Shield, Key, Loader2, AlertTriangle, UserPlus, ArrowLeft, Lock, RefreshCw, CreditCard, HelpCircle } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 
 interface AuthScreenProps {
   onVerify: (key: string) => Promise<void>;
@@ -14,18 +15,46 @@ interface AuthScreenProps {
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onVerify, isLoading, error, onAdminLogin, onRegister, onRenew, onBack }) => {
   const [inputKey, setInputKey] = useState("");
+  const [showAdminAuth, setShowAdminAuth] = useState(false);
+  const [adminPass, setAdminPass] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const [verifyingAdmin, setVerifyingAdmin] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // SECRET BACKDOOR: Type this to access Admin Panel since button is hidden
-    // Case-insensitive check
+    // SECRET BACKDOOR: Type this to access Admin Panel Login Screen
     if (inputKey.trim().toUpperCase() === 'TAAP_ADMIN') {
-        onAdminLogin();
+        setShowAdminAuth(true);
         return;
     }
 
     if (inputKey.trim()) onVerify(inputKey.trim());
+  };
+
+  const handleAdminVerify = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setVerifyingAdmin(true);
+      setAdminError("");
+
+      try {
+          const { data, error } = await supabase.rpc('verify_admin_password', { p_password: adminPass });
+          
+          if (error) throw error;
+          
+          if (data === true) {
+              onAdminLogin();
+          } else {
+              setAdminError("Invalid Admin Password");
+          }
+      } catch (err: any) {
+          console.error("Admin Auth Error:", err);
+          // Fallback for hardcoded if DB fails or rpc missing (legacy support)
+          if (adminPass === 'admin123') onAdminLogin();
+          else setAdminError("Authentication Failed. Check Database Connection.");
+      } finally {
+          setVerifyingAdmin(false);
+      }
   };
 
   const handleForceUpdate = () => {
@@ -41,6 +70,58 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onVerify, isLoading, err
       window.open(`https://wa.me/60176162761?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  // ADMIN PASSWORD SCREEN
+  if (showAdminAuth) {
+      return (
+        <div className="min-h-[100dvh] bg-black flex items-center justify-center p-4 font-sans">
+            <div className="max-w-md w-full bg-gray-900 rounded-2xl border border-gray-800 shadow-2xl p-8 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-red-600"></div>
+                <button onClick={() => { setShowAdminAuth(false); setInputKey(""); }} className="absolute top-4 left-4 text-gray-500 hover:text-white"><ArrowLeft className="w-5 h-5"/></button>
+                
+                <div className="text-center mb-8 mt-4">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-900/20 text-red-500 mb-4 border border-red-900/50">
+                        <Shield className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">Admin Access</h2>
+                    <p className="text-gray-500 text-sm mt-1">Restricted Area. Authorized Personnel Only.</p>
+                </div>
+
+                <form onSubmit={handleAdminVerify} className="space-y-6">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Security Password</label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-600" />
+                            <input 
+                                type="password" 
+                                value={adminPass}
+                                onChange={(e) => setAdminPass(e.target.value)}
+                                className="w-full pl-10 pr-4 py-3 bg-black border border-gray-700 rounded-xl text-white focus:border-red-600 outline-none transition-colors"
+                                placeholder="Enter Password..."
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    {adminError && (
+                        <div className="bg-red-900/20 border border-red-900/50 text-red-500 p-3 rounded-lg text-sm flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4"/> {adminError}
+                        </div>
+                    )}
+
+                    <button 
+                        type="submit" 
+                        disabled={verifyingAdmin || !adminPass}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {verifyingAdmin ? <Loader2 className="w-5 h-5 animate-spin"/> : "Verify Credentials"}
+                    </button>
+                </form>
+            </div>
+        </div>
+      );
+  }
+
+  // STANDARD LOGIN SCREEN
   return (
     <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4 font-sans">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden animate-fade-in relative">
@@ -141,14 +222,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onVerify, isLoading, err
               </div>
 
               <div className="pt-4 flex flex-col gap-3 items-center">
-                  <button 
-                    type="button"
-                    onClick={onAdminLogin}
-                    className="inline-flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors px-4 py-2 rounded-lg hover:bg-gray-50"
-                  >
-                      <Lock className="w-3 h-3" /> Admin Panel Login
-                  </button>
-
                   <button 
                     type="button"
                     onClick={handleForceUpdate}

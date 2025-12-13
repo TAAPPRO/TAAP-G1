@@ -1,7 +1,8 @@
 
 import React from 'react';
-import { Crown, Ticket, Save, SlidersHorizontal, Users2, Star, Trophy, Eye, Target, TrendingUp, Layers, CheckCircle } from 'lucide-react';
+import { Crown, Ticket, Save, Users2, Star, Trophy, TrendingUp, Layers, Target, CheckCircle, DollarSign, Wallet } from 'lucide-react';
 import { SystemSetting, License } from '../../types';
+import { StatCard } from './shared/StatCard';
 
 interface AffiliateProgramTabProps {
     onToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -16,6 +17,11 @@ export const AffiliateProgramTab: React.FC<AffiliateProgramTabProps> = ({
 }) => {
     const getSettingVal = (key: string) => settings?.find((s: any) => s.key === key)?.value || '0';
 
+    // Calculate Aggregate Stats
+    const totalEarnings = leaderboard.reduce((acc, curr) => acc + Number(curr.total_earnings), 0);
+    const activeAffiliates = leaderboard.filter(l => l.referral_count > 0).length;
+    const topEarner = leaderboard.length > 0 ? Number(leaderboard[0].total_earnings) : 0;
+
     return (
         <div className="space-y-8 animate-fade-in max-w-6xl mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-800 pb-4">
@@ -25,9 +31,19 @@ export const AffiliateProgramTab: React.FC<AffiliateProgramTabProps> = ({
                     </h2>
                     <p className="text-gray-500 text-sm mt-1">Control Global Acquisition Strategy & Tiering Logic.</p>
                 </div>
-                <div className="bg-gray-900 px-4 py-2 rounded-lg border border-gray-800 text-xs text-gray-400 font-mono">
-                    System Mode: DYNAMIC_TIER_V2
+                <div className="flex gap-3">
+                    <div className="bg-gray-900 px-4 py-2 rounded-lg border border-gray-800 text-xs text-gray-400 font-mono flex items-center">
+                        System Mode: DYNAMIC_TIER_V2
+                    </div>
                 </div>
+            </div>
+
+            {/* PROGRAM STATISTICS OVERVIEW */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard label="Total Payouts" value={`RM ${totalEarnings.toFixed(0)}`} icon={DollarSign} color="green" isMoney={true} />
+                <StatCard label="Active Affiliates" value={activeAffiliates} icon={Users2} color="blue" />
+                <StatCard label="Top Earner" value={`RM ${topEarner.toFixed(0)}`} icon={Trophy} color="yellow" isMoney={true} />
+                <StatCard label="Avg. Commission" value={`RM ${(activeAffiliates > 0 ? totalEarnings / activeAffiliates : 0).toFixed(0)}`} icon={Wallet} color="purple" isMoney={true} />
             </div>
             
             {/* CONFIGURATION GRID */}
@@ -209,7 +225,7 @@ export const AffiliateProgramTab: React.FC<AffiliateProgramTabProps> = ({
                                     <td className="p-4 text-white font-mono">{l.referral_count}</td>
                                     <td className="p-4 text-right font-mono text-green-400 font-bold">RM {Number(l.total_earnings).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                                     <td className="p-4 text-right">
-                                        <button className="text-gray-500 hover:text-white p-2 hover:bg-gray-800 rounded transition-colors"><Eye className="w-4 h-4"/></button>
+                                        {/* Updated to not need Eye Icon as row is clickable */}
                                     </td>
                                 </tr>
                             ))}

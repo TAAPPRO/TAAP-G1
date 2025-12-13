@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { 
     LayoutDashboard, Users, CreditCard, Settings, LogOut, 
-    Activity, Shield, Megaphone, Crown, Save, Box, Ticket, Clock,
-    AlertTriangle, CheckCircle, X, Database, Menu, ChevronLeft
+    Activity, Shield, Megaphone, Crown, Box, Ticket,
+    AlertTriangle, CheckCircle, X, Database, Menu, Bell, Search
 } from 'lucide-react';
 import { OverviewTab } from './admin/OverviewTab';
 import { UserManagementSection } from './admin/UserManagementSection';
@@ -15,6 +15,7 @@ import { AuditTrailTabContent } from './AuditTrailTabContent';
 import { GlobalConfigPanel } from './admin/config/GlobalConfigPanel';
 import { PackageEditor } from './admin/config/PackageEditor';
 import { CouponsManager } from './admin/config/CouponsManager';
+import { GlobalAffiliateMonitorSection } from './admin/GlobalAffiliateMonitorModal'; // Imported as Section
 import { CreateUserModal } from './CreateUserModal';
 import { UserManagementModal } from './admin/UserManagementModal';
 import { BalanceAdjustmentModal } from './BalanceAdjustmentModal';
@@ -34,6 +35,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
     const [error, setError] = useState<string | null>(null);
     const [toast, setToast] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile Sidebar State
+    
+    // Notifications
+    const [notifications, setNotifications] = useState<{count: number, items: string[]}>({ count: 0, items: [] });
+    const [showNotifications, setShowNotifications] = useState(false);
 
     // Data
     const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -65,15 +70,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
     // --- EFFECTS ---
     useEffect(() => {
         fetchInitialData();
-        const interval = setInterval(refreshCurrentTab, 30000);
+        fetchNotifications();
+        const interval = setInterval(() => {
+            refreshCurrentTab();
+            fetchNotifications();
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 
     useEffect(() => {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'payouts') fetchPayouts();
-        if (activeTab === 'config') { fetchSettings(); fetchPackages(); }
-        if (activeTab === 'affiliate') { fetchLeaderboard(); fetchSettings(); }
+        if (activeTab === 'config' || activeTab === 'packages' || activeTab === 'coupons' || activeTab === 'affiliate') { 
+            fetchSettings(); 
+            fetchPackages(); 
+        }
+        if (activeTab === 'affiliate') { fetchLeaderboard(); }
     }, [activeTab, userPage, userFilters, payoutFilter]);
 
     // Close sidebar on route change (mobile)
@@ -90,6 +102,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         finally { setIsLoading(false); }
     };
 
+    const fetchNotifications = async () => {
+        try {
+            const now = new Date();
+            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+            // 1. Pending Payouts
+            const { count: payoutCount } = await supabase.from('payout_requests')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
+            // 2. New Registrations (Last 24h)
+            const { count: newUsersCount } = await supabase.from('licenses')
+                .select('*', { count: 'exact', head: true })
+                .gt('created_at', yesterday);
+
+            // 3. Pending Approvals
+            const { count: pendingUsersCount } = await supabase.from('licenses')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+
+            const items = [];
+            if (payoutCount && payoutCount > 0) items.push(`${payoutCount} Withdrawal Request(s) Pending`);
+            if (newUsersCount && newUsersCount > 0) items.push(`${newUsersCount} New Registration(s) in 24h`);
+            if (pendingUsersCount && pendingUsersCount > 0) items.push(`${pendingUsersCount} User(s) Awaiting Approval`);
+
+            setNotifications({
+                count: items.length,
+                items: items
+            });
+
+        } catch (e) { console.error("Notif Error", e); }
+    };
+
     const refreshCurrentTab = () => {
         if (activeTab === 'overview') fetchMetrics();
         if (activeTab === 'users') fetchUsers();
@@ -103,30 +148,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
 
     const fetchUsers = async () => {
         setIsLoading(true);
-        const { data, error } = await supabase.rpc('admin_get_licenses_paginated', {
-            p_page: userPage.currentPage,
-            p_limit: userPage.limit,
-            p_search_term: userFilters.searchTerm || null,
-            p_sort_by: 'created_at',
-            p_sort_dir: 'desc',
-            p_ref_filter: null 
-        });
+        setError(null);
         
-        if (error) {
-            console.error("Fetch Users Error:", error);
-            setError(error.message);
+        try {
+            const { data, error } = await supabase.rpc('admin_get_licenses_paginated', {
+                p_page: userPage.currentPage,
+                p_limit: userPage.limit,
+                p_search_term: userFilters.searchTerm || null,
+                p_sort_by: 'created_at',
+                p_sort_dir: 'desc',
+                p_ref_filter: null,
+                p_status: userFilters.status === 'all' ? null : userFilters.status 
+            });
+            
+            if (error) {
+                throw error;
+            } else if (data) {
+                setLicensesData({ users: data.data, total: data.total });
+            } else {
+                setLicensesData({ users: [], total: 0 });
+            }
+        } catch (err: any) {
+            console.error("Fetch Users Error:", err);
+            let msg = err.message || "Unknown error";
+            setError(msg);
             setLicensesData({ users: [], total: 0 });
-        } else if (data) {
-            setLicensesData({ users: data.data, total: data.total });
-            setError(null);
-        } else {
-            setLicensesData({ users: [], total: 0 });
+        } finally {
+            setIsLoading(false);
         }
-        setIsLoading(false);
     };
 
     const fetchPayouts = async () => {
-        // Silent update (no loading spinner) to avoid UI flicker
         const { data } = await supabase.from('payout_requests').select('*').order('created_at', { ascending: false });
         if (data) setPayouts(data);
     };
@@ -157,8 +209,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         setTimeout(() => setToast(null), 3000);
     };
 
-    // --- NEW MODAL HANDLERS ---
-
+    // --- MODAL HANDLERS ---
     const openUserActionModal = (action: 'approve' | 'suspend' | 'delete', ids: number[]) => {
         if (!ids.length) { addToast("No users selected", 'error'); return; }
         
@@ -184,348 +235,292 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
                 break;
         }
 
+        setActionConfig({ type: action, title, message, confirmLabel, ids });
+    };
+
+    const handleUserActionConfirm = async (note?: string) => {
+        if (!actionConfig) return;
+        const { type, ids } = actionConfig;
+
+        try {
+            const { data, error } = await supabase.rpc('admin_bulk_action', { p_ids: ids, p_action: type });
+            if (error) throw error;
+            addToast(`Successfully processed ${data.count} users.`, 'success');
+            fetchUsers();
+            setSelectedUserIds([]);
+        } catch (e: any) { addToast(e.message, 'error'); } 
+        finally { setActionConfig(null); }
+    };
+
+    const openPayoutActionModal = (id: number, type: 'approve' | 'reject') => {
+        const isApprove = type === 'approve';
         setActionConfig({
-            type: action,
-            title,
-            message,
-            confirmLabel,
-            ids,
-            requiresInput: false
+            type: isApprove ? 'approve_payout' : 'reject_payout',
+            title: isApprove ? "Approve Payout" : "Reject Payout",
+            message: isApprove ? "Confirm transfer of funds? This will mark request as approved." : "Reject this request? Funds will be refunded to user wallet.",
+            confirmLabel: isApprove ? "Confirm Transfer" : "Reject Request",
+            requiresInput: true,
+            inputPlaceholder: isApprove ? "Transaction Ref / Bank Note" : "Reason for rejection",
+            ids: [],
+            meta: { id }
         });
     };
 
-    const openPayoutModal = (id: number, type: 'approve' | 'reject') => {
-        // Use specific action types for payouts to distinguish from user bulk actions
-        const actionType = type === 'approve' ? 'approve_payout' : 'reject_payout';
-        
-        setActionConfig({
-            type: actionType,
-            title: type === 'approve' ? "Approve Payout" : "Reject Payout",
-            message: type === 'approve' 
-                ? "Confirm that you have transferred the funds. Enter transaction reference below." 
-                : "Rejecting this request will refund the amount to the user's wallet.",
-            confirmLabel: type === 'approve' ? "Confirm Transfer" : "Reject Request",
-            ids: [id],
-            requiresInput: true,
-            inputPlaceholder: type === 'approve' ? "Transaction Reference / Bank Receipt ID" : "Reason for rejection (e.g. Invalid Bank Details)"
-        });
+    const handlePayoutActionConfirm = async (note?: string) => {
+        if (!actionConfig?.meta?.id) return;
+        const { id } = actionConfig.meta;
+        const type = actionConfig.type === 'approve_payout' ? 'approved' : 'rejected';
+
+        try {
+            const { data, error } = await supabase.rpc('process_payout', { p_payout_id: id, p_status: type, p_admin_note: note || '' });
+            if (error) throw error;
+            if (data && data.status === 'error') throw new Error(data.message);
+            addToast(`Payout ${type}.`, 'success');
+            fetchPayouts();
+        } catch (e: any) { addToast(e.message, 'error'); } 
+        finally { setActionConfig(null); }
     };
 
     const executeAction = async (note?: string) => {
-        if (!actionConfig) return;
-
-        // OPTIMISTIC UPDATE: Update UI immediately before DB call for better UX
-        const previousPayouts = [...payouts];
-        
-        // Payout Optimistic Update
-        if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
-             const status = actionConfig.type === 'approve_payout' ? 'approved' : 'rejected';
-             setPayouts(prev => prev.map(p => 
-                 p.id === actionConfig.ids[0] ? { ...p, status: status as any, admin_note: note || '' } : p
-             ));
-        }
-
-        try {
-            // USER ACTIONS (Bulk)
-            if (['approve', 'suspend', 'delete'].includes(actionConfig.type)) {
-                const { data, error } = await supabase.rpc('admin_bulk_action', { 
-                    p_ids: actionConfig.ids, 
-                    p_action: actionConfig.type 
-                });
-                if (error) throw error;
-                addToast(`Users ${actionConfig.type}d successfully`, 'success');
-                fetchUsers();
-                setSelectedUserIds([]); // Clear selection
-            }
-            // PAYOUT ACTIONS (Single)
-            else if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
-                const status = actionConfig.type === 'approve_payout' ? 'approved' : 'rejected';
-                const finalNote = note || (status === 'approved' ? 'Processed' : 'Rejected by Admin');
-                
-                const { data, error } = await supabase.rpc('process_payout', { 
-                    p_payout_id: actionConfig.ids[0], 
-                    p_status: status, 
-                    p_admin_note: finalNote 
-                });
-                
-                if (error) {
-                    console.error("RPC Error:", error);
-                    throw error;
-                }
-                
-                if (data && data.status === 'error') {
-                    console.error("DB Function Error:", data.message);
-                    throw new Error(data.message || "Action Failed");
-                }
-                
-                // CRITICAL CHECK: Verify DB actually updated
-                if (data && data.new_status !== status) {
-                     setPayouts(previousPayouts); // Revert optimistic
-                     throw new Error(`DB Error: Status reverted to '${data.new_status}'. Check DB constraints.`);
-                }
-                
-                addToast(`Payout ${status}`, 'success');
-            }
-        } catch (e: any) {
-            // Revert Optimistic Update on Error
-            if (['approve_payout', 'reject_payout'].includes(actionConfig.type)) {
-                setPayouts(previousPayouts);
-            }
-            console.error("ExecuteAction Exception:", e);
-            addToast(e.message || "Action Failed", 'error');
-        } finally {
-            setActionConfig(null);
-        }
+        if (actionConfig?.type.includes('payout')) { await handlePayoutActionConfirm(note); } 
+        else { await handleUserActionConfirm(note); }
     };
 
-    // --- OTHER HANDLERS ---
+    const handleUpdateSetting = async (key: string, value: string) => {
+        try {
+            const { error } = await supabase.rpc('admin_update_setting', { p_key: key, p_value: value });
+            if (error) throw error;
+            addToast("Setting updated", 'success');
+            fetchSettings();
+        } catch (e: any) { addToast(e.message, 'error'); }
+    };
 
     const handleUpdatePackage = async (id: number, updates: any) => {
         try {
-            // FIX: Use RPC instead of direct update to avoid RLS issues
-            const { error } = await supabase.rpc('admin_update_package', { 
-                p_id: id, 
-                p_updates: updates 
-            });
+            const { error } = await supabase.rpc('admin_update_package', { p_id: id, p_updates: updates });
             if (error) throw error;
             addToast("Package updated", 'success');
             fetchPackages();
         } catch (e: any) { addToast(e.message, 'error'); }
     };
 
-    const handleSaveSetting = async (key: string, value: string) => {
-        try {
-            // FIX: Use RPC instead of direct update to avoid RLS issues
-            const { error } = await supabase.rpc('admin_update_setting', { p_key: key, p_value: value });
-            if (error) throw error;
-            addToast("Setting saved", 'success');
-            fetchSettings();
-        } catch (e: any) { addToast(e.message, 'error'); }
-    };
-
-    const handleRunExpiryCheck = async () => {
-        try {
-            const { error } = await supabase.rpc('check_expired_subscriptions');
-            if (error) throw error;
-            addToast("Expiry check completed", 'success');
-        } catch (e: any) { addToast(e.message, 'error'); }
-    };
-
-    const handleExportPayouts = () => {
-        const headers = ['Date', 'License Key', 'Amount', 'Bank Details', 'Status', 'Note'];
-        const csvContent = [
-            headers.join(','),
-            ...payouts.map(p => [
-                new Date(p.created_at).toLocaleDateString(),
-                p.license_key,
-                p.amount,
-                `"${p.bank_details}"`,
-                p.status,
-                `"${p.admin_note || ''}"`
-            ].join(','))
-        ].join('\n');
-        
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `payouts-${new Date().toISOString()}.csv`;
-        a.click();
-    };
+    // Navigation Items
+    const menuItems = [
+        { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'monitor', label: 'Global Monitor', icon: Activity }, // NEW
+        { id: 'users', label: 'User Management', icon: Users },
+        { id: 'payouts', label: 'Payout Requests', icon: CreditCard },
+        { id: 'packages', label: 'Package Manager', icon: Box }, // NEW
+        { id: 'coupons', label: 'Coupon Manager', icon: Ticket }, // NEW
+        { id: 'affiliate', label: 'Affiliate Program', icon: Crown },
+        { id: 'broadcasts', label: 'Broadcasts', icon: Megaphone },
+        { id: 'config', label: 'System Config', icon: Settings },
+        { id: 'audit', label: 'Audit Trail', icon: Shield },
+    ];
 
     return (
-        <div className="min-h-screen bg-black text-gray-200 font-sans flex flex-col md:flex-row relative">
+        <div className="min-h-screen bg-black text-gray-100 font-sans flex">
             
-            {/* MOBILE HEADER */}
-            <div className="md:hidden bg-gray-900 p-4 border-b border-gray-800 flex justify-between items-center sticky top-0 z-30">
-                <div className="flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-orange-600" />
-                    <span className="font-bold text-white">TAAP ADMIN</span>
-                </div>
-                <button onClick={() => setSidebarOpen(true)} className="p-2 text-gray-400 hover:text-white">
-                    <Menu className="w-6 h-6" />
-                </button>
-            </div>
-
-            {/* MOBILE OVERLAY */}
+            {/* Mobile Overlay */}
             {sidebarOpen && (
                 <div 
-                    className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm animate-fade-in"
+                    className="fixed inset-0 z-20 bg-black/80 backdrop-blur-sm md:hidden"
                     onClick={() => setSidebarOpen(false)}
                 ></div>
             )}
 
-            {/* SIDEBAR (Responsive) */}
-            <aside className={`
-                fixed inset-y-0 left-0 z-50 w-72 bg-gray-900 border-r border-gray-800 flex flex-col transform transition-transform duration-300 ease-in-out
-                ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-                md:translate-x-0 md:relative md:w-64 md:flex
-            `}>
-                <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-                    <div>
-                        <h1 className="text-xl font-black text-white flex items-center gap-2">
-                            <Shield className="w-6 h-6 text-orange-600" /> TAAP ADMIN
-                        </h1>
-                        <p className="text-xs text-gray-500 mt-1">Enterprise Control v7.0</p>
+            {/* Sidebar */}
+            <aside className={`fixed top-0 left-0 bottom-0 z-30 w-64 bg-gray-900 border-r border-gray-800 flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-900">
+                    <div className="flex items-center gap-2">
+                        <Shield className="w-6 h-6 text-red-600" />
+                        <span className="font-bold text-lg tracking-tight text-white">ADMIN PANEL</span>
                     </div>
-                    <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-500 hover:text-white">
-                        <ChevronLeft className="w-6 h-6" />
-                    </button>
+                    <button className="md:hidden text-gray-400 hover:text-white" onClick={() => setSidebarOpen(false)}><X className="w-5 h-5"/></button>
                 </div>
                 
-                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                    {[
-                        { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
-                        { id: 'users', icon: Users, label: 'User Management' },
-                        { id: 'payouts', icon: CreditCard, label: 'Financial Requests' },
-                        { id: 'affiliate', icon: Crown, label: 'Affiliate Program' },
-                        { id: 'config', icon: Settings, label: 'System Config' },
-                        { id: 'broadcasts', icon: Megaphone, label: 'Broadcasts' },
-                        { id: 'logs', icon: Activity, label: 'Audit Trail' },
-                    ].map(item => (
+                <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+                    {menuItems.map(item => (
                         <button
                             key={item.id}
-                            onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === item.id ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+                            onClick={() => setActiveTab(item.id)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === item.id ? 'bg-orange-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
                         >
-                            <item.icon className="w-4 h-4" /> {item.label}
+                            <item.icon className="w-4 h-4" />
+                            {item.label}
                         </button>
                     ))}
                 </nav>
 
-                <div className="p-4 border-t border-gray-800">
-                    <button onClick={() => setModals({ ...modals, databaseSetup: true })} className="w-full flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-bold text-gray-500 hover:text-white hover:bg-gray-800 transition-all mb-2">
-                        <Database className="w-4 h-4" /> DB Installer
-                    </button>
-                    <button onClick={onExit} className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-red-900/20 text-red-400 hover:bg-red-900/40 font-bold text-sm transition-all">
-                        <LogOut className="w-4 h-4" /> Exit Panel
+                <div className="p-4 border-t border-gray-800 bg-gray-900">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-800 rounded-xl mb-3">
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                        <span className="text-xs font-bold text-gray-300">System Online</span>
+                    </div>
+                    <button onClick={onExit} className="w-full flex items-center gap-2 px-4 py-3 text-red-400 hover:bg-red-900/20 rounded-xl transition-colors text-sm font-bold justify-center">
+                        <LogOut className="w-4 h-4" /> Logout
                     </button>
                 </div>
             </aside>
 
-            {/* MAIN CONTENT */}
-            <main className="flex-1 p-4 md:p-8 overflow-y-auto h-[calc(100vh-60px)] md:h-screen bg-black">
-                {/* Toast Notification */}
-                {toast && (
-                    <div className={`fixed top-4 right-4 z-[60] px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-fade-in-up border ${toast.type === 'success' ? 'bg-green-900/90 border-green-700 text-white' : toast.type === 'error' ? 'bg-red-900/90 border-red-700 text-white' : 'bg-blue-900/90 border-blue-700 text-white'}`}>
-                        {toast.type === 'success' ? <CheckCircle className="w-5 h-5"/> : toast.type === 'error' ? <AlertTriangle className="w-5 h-5"/> : <Activity className="w-5 h-5"/>}
-                        <span className="font-bold text-sm">{toast.msg}</span>
+            {/* Main Content */}
+            <main className="flex-1 flex flex-col min-w-0 bg-black h-[100dvh] overflow-hidden relative">
+                {/* Header */}
+                <header className="h-16 border-b border-gray-800 bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 md:px-6 shrink-0 z-10 sticky top-0">
+                    <div className="flex items-center gap-4">
+                        <button className="md:hidden text-gray-400 hover:text-white p-1" onClick={() => setSidebarOpen(true)}><Menu className="w-6 h-6"/></button>
+                        <h1 className="text-sm md:text-lg font-bold text-white uppercase tracking-wider truncate">{menuItems.find(i => i.id === activeTab)?.label}</h1>
                     </div>
-                )}
-
-                {/* Content Render */}
-                {activeTab === 'overview' && (
-                    <OverviewTab 
-                        metrics={metrics} 
-                        loading={isLoading} 
-                        error={error} 
-                        refresh={fetchInitialData} 
-                        onFix={() => setModals({...modals, databaseSetup: true})}
-                        leaderboard={leaderboard}
-                        logs={auditLogs}
-                    />
-                )}
-
-                {activeTab === 'users' && (
-                    <>
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                            <h2 className="text-2xl font-bold text-white">User Management</h2>
-                            <button onClick={() => setModals({...modals, createUser: true})} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg flex items-center gap-2 w-full md:w-auto justify-center">
-                                <Users className="w-4 h-4" /> Create User
+                    <div className="flex items-center gap-3">
+                        {/* Notifications */}
+                        <div className="relative">
+                            <button 
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg transition-colors border border-gray-700 relative"
+                            >
+                                <Bell className="w-4 h-4" />
+                                {notifications.count > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-gray-800"></span>}
                             </button>
+                            
+                            {showNotifications && (
+                                <div className="absolute right-0 top-full mt-2 w-64 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden">
+                                    <div className="p-3 border-b border-gray-800 font-bold text-xs text-gray-400 uppercase">Recent Alerts</div>
+                                    <div className="max-h-60 overflow-y-auto">
+                                        {notifications.items.length === 0 ? (
+                                            <p className="p-4 text-xs text-gray-500 text-center">No new alerts.</p>
+                                        ) : (
+                                            notifications.items.map((item, i) => (
+                                                <div key={i} className="p-3 border-b border-gray-800 text-xs text-white hover:bg-gray-800 transition-colors flex items-start gap-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0"></div>
+                                                    {item}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
+
+                        <button onClick={() => setModals({...modals, databaseSetup: true})} className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg transition-colors border border-gray-700" title="Database Setup">
+                            <Database className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setModals({...modals, createUser: true})} className="bg-white text-black hover:bg-gray-200 px-3 md:px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors whitespace-nowrap">
+                            <Users className="w-4 h-4" /> <span className="hidden md:inline">New User</span>
+                        </button>
+                    </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-4 md:p-8">
+                    {activeTab === 'overview' && <OverviewTab metrics={metrics} loading={isLoading} error={error} refresh={fetchInitialData} onFix={() => setModals({...modals, databaseSetup: true})} leaderboard={leaderboard} logs={auditLogs} />}
+                    
+                    {activeTab === 'monitor' && <GlobalAffiliateMonitorSection />} 
+
+                    {activeTab === 'users' && (
                         <UserManagementSection 
-                            licensesData={licensesData}
-                            loading={isLoading}
-                            error={error}
-                            filters={userFilters}
-                            setFilters={setUserFilters}
-                            selectedIds={selectedUserIds}
-                            setSelectedIds={setSelectedUserIds}
-                            onAction={openUserActionModal}
-                            pagination={userPage}
-                            setPagination={setUserPage}
-                            setModalState={(u: any) => setModals(prev => ({ ...prev, ...u }))}
-                            refreshCurrentTab={fetchUsers}
-                            onAdjustBalance={(u) => setModals({...modals, adjustBalance: u})}
+                            licensesData={licensesData} 
+                            loading={isLoading} 
+                            error={error} 
+                            filters={userFilters} 
+                            setFilters={setUserFilters} 
+                            selectedIds={selectedUserIds} 
+                            setSelectedIds={setSelectedUserIds} 
+                            onAction={openUserActionModal} 
+                            pagination={userPage} 
+                            setPagination={setUserPage} 
+                            setModalState={setModals}
+                            refreshCurrentTab={refreshCurrentTab}
+                            onAdjustBalance={(user) => setModals({...modals, adjustBalance: user})}
                         />
-                    </>
-                )}
+                    )}
 
-                {activeTab === 'payouts' && (
-                    <PayoutsSection 
-                        payouts={payouts}
-                        loading={isLoading}
-                        filter={payoutFilter}
-                        setFilter={setPayoutFilter}
-                        onAction={openPayoutModal}
-                        handleExportPayouts={handleExportPayouts}
-                    />
-                )}
+                    {activeTab === 'payouts' && (
+                        <PayoutsSection 
+                            payouts={payouts} 
+                            loading={isLoading} 
+                            filter={payoutFilter} 
+                            setFilter={setPayoutFilter} 
+                            onAction={openPayoutActionModal}
+                            handleExportPayouts={() => {
+                                const csv = "Date,Key,Amount,Status,Bank\n" + payouts.map(p => `${p.created_at},${p.license_key},${p.amount},${p.status},"${p.bank_details}"`).join("\n");
+                                const blob = new Blob([csv], { type: 'text/csv' });
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a'); a.href = url; a.download = 'payouts.csv'; a.click();
+                            }} 
+                        />
+                    )}
 
-                {activeTab === 'affiliate' && (
-                    <AffiliateProgramTab 
-                        onToast={addToast}
-                        leaderboard={leaderboard}
-                        settings={settings}
-                        onUpdateSetting={handleSaveSetting}
-                        onViewAffiliate={(u) => setModals({...modals, affiliateDetails: u})}
-                    />
-                )}
-
-                {activeTab === 'config' && (
-                    <div className="space-y-12 animate-fade-in max-w-6xl mx-auto">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <h2 className="text-3xl font-black text-white tracking-tight">Business Command Center</h2>
-                            <button onClick={handleRunExpiryCheck} className="px-5 py-2.5 bg-gray-900 border border-red-900/50 hover:bg-red-900/20 text-red-400 rounded-xl text-xs font-bold flex items-center gap-2 transition-all w-full md:w-auto justify-center"><Clock className="w-4 h-4"/> Run Expiry Check</button>
-                        </div>
-
-                        {/* NEW GLOBAL CONFIG SECTION */}
-                        <div className="space-y-6">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-3 border-b border-gray-800 pb-3"><Activity className="w-5 h-5 text-blue-500" /> Global Configuration</h3>
-                            <GlobalConfigPanel onToast={addToast} />
-                        </div>
-
-                        <div className="space-y-6">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-3 border-b border-gray-800 pb-3"><Box className="w-5 h-5 text-orange-500" /> Subscription Plans</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {packages.map(pkg => (<PackageEditor key={pkg.id} pkg={pkg} onUpdate={(updates) => handleUpdatePackage(pkg.id, updates)} />))}
+                    {activeTab === 'packages' && (
+                        <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Box className="w-6 h-6 text-blue-500"/> Package Manager</h2>
+                            </div>
+                            <div className="grid grid-cols-1 gap-6">
+                                {packages.map(pkg => (
+                                    <PackageEditor key={pkg.id} pkg={pkg} onUpdate={(updates) => handleUpdatePackage(pkg.id, updates)} />
+                                ))}
                             </div>
                         </div>
-                        <div className="space-y-6">
-                            <h3 className="text-lg font-bold text-white flex items-center gap-3 border-b border-gray-800 pb-3"><Ticket className="w-5 h-5 text-green-500" /> Coupon Management</h3>
+                    )}
+
+                    {activeTab === 'coupons' && (
+                        <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Ticket className="w-6 h-6 text-green-500"/> Coupon Manager</h2>
+                            </div>
                             <CouponsManager onToast={addToast} />
                         </div>
-                        
-                        {/* EXISTING NEURAL ECONOMY COSTS (Keep generic editor for fallbacks) */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="space-y-6">
-                                <h3 className="text-lg font-bold text-white flex items-center gap-3 border-b border-gray-800 pb-3"><Activity className="w-5 h-5 text-purple-500" /> Advanced Cost Settings</h3>
-                                <div className="space-y-4">
-                                    {settings.filter(s => s.key.startsWith('cost_')).map(s => (
-                                        <div key={s.key} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between">
-                                            <div><p className="text-xs font-bold text-gray-400 uppercase tracking-wide">{s.key.replace('cost_per_', '').replace(/_/g, ' ')}</p><p className="text-[10px] text-gray-600">{s.description}</p></div>
-                                            <div className="flex items-center gap-2"><input type="number" defaultValue={s.value} id={`setting-${s.key}`} className="w-20 bg-black border border-gray-700 rounded-lg py-2 px-3 text-white text-sm font-mono text-center focus:border-blue-500 outline-none" /><button onClick={() => handleSaveSetting(s.key, (document.getElementById(`setting-${s.key}`) as HTMLInputElement).value)} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg"><Save className="w-4 h-4"/></button></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {activeTab === 'broadcasts' && <BroadcastsTabContent onToast={addToast} />}
-                
-                {activeTab === 'logs' && <AuditTrailTabContent onToast={addToast} />}
+                    {activeTab === 'affiliate' && (
+                        <AffiliateProgramTab 
+                            onToast={addToast} 
+                            leaderboard={leaderboard} 
+                            settings={settings} 
+                            onUpdateSetting={handleUpdateSetting} 
+                            onViewAffiliate={(aff) => setModals({...modals, affiliateDetails: aff})}
+                        />
+                    )}
+
+                    {activeTab === 'broadcasts' && <BroadcastsTabContent onToast={addToast} />}
+                    
+                    {activeTab === 'audit' && <AuditTrailTabContent onToast={addToast} />}
+
+                    {activeTab === 'config' && (
+                        <div className="space-y-8 animate-fade-in max-w-5xl mx-auto pb-10">
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Settings className="w-6 h-6 text-gray-400"/> System Configuration</h2>
+                            <GlobalConfigPanel onToast={addToast} />
+                        </div>
+                    )}
+                </div>
             </main>
 
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-[200] animate-slide-up border ${toast.type === 'success' ? 'bg-gray-900 border-green-500 text-green-400' : toast.type === 'error' ? 'bg-gray-900 border-red-500 text-red-400' : 'bg-gray-900 border-blue-500 text-blue-400'}`}>
+                    {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : toast.type === 'error' ? <AlertTriangle className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
+                    <span className="font-bold text-sm">{toast.msg}</span>
+                </div>
+            )}
+
             {/* Modals */}
-            <AdminActionModal isOpen={!!actionConfig} onClose={() => setActionConfig(null)} config={actionConfig} onConfirm={executeAction} />
-            <DatabaseSetupModal isOpen={modals.databaseSetup} onClose={() => setModals({...modals, databaseSetup: false})} />
             <CreateUserModal isOpen={modals.createUser} onClose={() => setModals({...modals, createUser: false})} onSuccess={(msg) => { addToast(msg, 'success'); fetchUsers(); }} />
-            {modals.manageUser && <UserManagementModal user={modals.manageUser} onClose={() => setModals({...modals, manageUser: null})} onUpdate={(success, msg) => { if(success) { addToast(msg, 'success'); fetchUsers(); } }} />}
-            {modals.adjustBalance && <BalanceAdjustmentModal isOpen={!!modals.adjustBalance} onClose={() => setModals({...modals, adjustBalance: null})} user={modals.adjustBalance} onSuccess={() => { addToast("Balance updated", 'success'); fetchUsers(); }} />}
-            {modals.affiliateDetails && <AffiliateDetailsModal isOpen={!!modals.affiliateDetails} onClose={() => setModals({...modals, affiliateDetails: null})} affiliate={modals.affiliateDetails} settings={settings} />}
+            
+            {modals.manageUser && (
+                <UserManagementModal user={modals.manageUser} onClose={() => setModals({...modals, manageUser: null})} onUpdate={(success, msg) => { if(success) { addToast(msg, 'success'); fetchUsers(); } else addToast(msg, 'error'); }} />
+            )}
+
+            <BalanceAdjustmentModal isOpen={!!modals.adjustBalance} onClose={() => setModals({...modals, adjustBalance: null})} user={modals.adjustBalance} onSuccess={() => { addToast("Balance updated", 'success'); fetchUsers(); }} />
+            
+            <AffiliateDetailsModal isOpen={!!modals.affiliateDetails} onClose={() => setModals({...modals, affiliateDetails: null})} affiliate={modals.affiliateDetails} settings={settings} />
+            
+            <DatabaseSetupModal isOpen={modals.databaseSetup} onClose={() => setModals({...modals, databaseSetup: false})} />
+
+            <AdminActionModal 
+                isOpen={!!actionConfig} 
+                onClose={() => setActionConfig(null)} 
+                config={actionConfig} 
+                onConfirm={executeAction} 
+            />
         </div>
     );
 };

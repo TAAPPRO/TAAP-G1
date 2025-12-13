@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { License } from '../../types';
-import { Search, Loader2, CheckSquare, Square, Edit, Trash2, UserX, UserCheck, Wallet, Calendar, Clock, ChevronRight, Inbox, Database, Archive, Check } from 'lucide-react';
+import { Search, Loader2, CheckSquare, Square, Edit, Trash2, UserX, UserCheck, Wallet, Calendar, ChevronRight, Inbox, Database, Archive, Check, Copy } from 'lucide-react';
+import { CopyToClipboard } from '../CopyToClipboard';
 
 interface UserManagementSectionProps {
     licensesData: { users: License[], total: number };
@@ -180,7 +181,14 @@ export const UserManagementSection: React.FC<UserManagementSectionProps> = ({
                                                     {user.status === 'pending' && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_orange]"></span>}
                                                 </div>
                                                 <div className="text-xs text-gray-500 font-mono mt-0.5">{user.user_email}</div>
-                                                <div className="text-[10px] text-gray-600 font-mono mt-0.5 flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity"><ChevronRight className="w-3 h-3"/> {user.license_key}</div>
+                                                <div className="flex items-center gap-2 mt-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                    <div className="text-[10px] text-gray-600 font-mono flex items-center gap-1">
+                                                        <ChevronRight className="w-3 h-3"/> {user.license_key}
+                                                    </div>
+                                                    <CopyToClipboard text={user.license_key} className="p-1 hover:bg-gray-800 rounded text-gray-500 !bg-transparent !shadow-none h-auto w-auto" label="" copiedLabel="">
+                                                        <Copy className="w-3 h-3"/>
+                                                    </CopyToClipboard>
+                                                </div>
                                             </td>
                                             <td className="p-4">
                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${user.status === 'active' ? 'bg-green-900/20 text-green-400 border-green-900/30' : user.status === 'suspended' ? 'bg-red-900/20 text-red-400 border-red-900/30' : 'bg-orange-900/20 text-orange-400 border-orange-900/30'}`}>{user.status}</span>
@@ -241,6 +249,16 @@ export const UserManagementSection: React.FC<UserManagementSectionProps> = ({
                                     <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase shrink-0 ${user.status === 'active' ? 'bg-green-900/20 text-green-400 border border-green-900/30' : user.status === 'suspended' ? 'bg-red-900/20 text-red-400 border border-red-900/30' : 'bg-orange-900/20 text-orange-400 border border-orange-900/30'}`}>
                                         {user.status}
                                     </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 mb-3 bg-black/30 p-2 rounded-lg border border-gray-800">
+                                    <span className="text-[10px] text-gray-500 font-mono">Key:</span>
+                                    <span className="text-[10px] text-gray-300 font-mono truncate flex-1">{user.license_key}</span>
+                                    <div onClick={e => e.stopPropagation()}>
+                                        <CopyToClipboard text={user.license_key} className="p-1 hover:bg-gray-700 rounded text-gray-400 !bg-transparent !shadow-none h-auto w-auto" label="" copiedLabel="">
+                                            <Copy className="w-3 h-3"/>
+                                        </CopyToClipboard>
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-2 mb-3">

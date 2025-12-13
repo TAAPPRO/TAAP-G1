@@ -185,7 +185,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
 
   const handleRequestGenerate = async () => {
       const currentConfig = await refreshConfigBeforeAction();
-      if (credits >= currentConfig.costPerGen) setShowConfirmGen(true); else setIsWalletOpen(true);
+      const totalCost = currentConfig.costPerGen + (useTrends ? 2 : 0); // Hardcoded trend cost fallback
+      if (credits >= totalCost) setShowConfirmGen(true); else setIsWalletOpen(true);
   };
 
   const handleRequestAutofill = async () => {
@@ -213,14 +214,35 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       setShowConfirmGen(false);
       setIsLoading(true); setLoadingProgress(5); setError(null);
       if (!isHumanize) setGeneratedContent(null);
+      
       try {
           let trends = "";
+          let currentBalance = credits;
+
+          // 1. Handle Trends Cost (Separate Transaction)
           if (useTrends && !isHumanize) {
-              setLoadingStep("Scanning Viral Trends..."); setLoadingProgress(20);
+              setLoadingStep("Scanning Viral Trends (Live Data)..."); 
+              setLoadingProgress(20);
+              
+              // Explicitly deduct for Trend Search
+              const { data: newBal, error } = await supabase.rpc('deduct_credits', { 
+                  p_license_key: licenseKey, 
+                  p_amount: 2, // 2 Credits for Search Grounding
+                  p_type: 'trend_search' 
+              });
+              
+              if (error) throw new Error("Not enough credits for Trend Search.");
+              currentBalance = newBal;
+              setCredits(newBal); // Update local state immediately
+
+              // Actual API Call
               trends = await getTrendInsights(`${formData.productName} trends`);
           }
+
           if (!isMountedRef.current) return;
+          setLoadingStep("Neural Engine Writing...");
           
+          // 2. Main Generation Call
           const { content, newBalance } = await generateMarketingContent(formData, trends, isHumanize, licenseKey, dynamicConfig.costPerGen);
           
           if (!isMountedRef.current) return;
@@ -551,8 +573,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} config={dynamicConfig} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onRestore={handleRestoreFromHistory} />
       <AffiliateModal isOpen={isAffiliateOpen} onClose={() => setIsAffiliateOpen(false)} licenseKey={licenseKey} />
-      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message="This action will consume Neural Energy from your battery." confirmText="Yes, Proceed" />
-      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message="This action will consume Neural Energy from your battery." confirmText="Yes, Auto-Fill" />
+      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message={`This action will consume ${dynamicConfig.costPerGen + (useTrends ? 2 : 0)} Neural Credits.`} confirmText="Yes, Proceed" />
+      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message={`This action will consume ${dynamicConfig.autofillCost} Neural Credits.`} confirmText="Yes, Auto-Fill" />
     
     </div>
   );
