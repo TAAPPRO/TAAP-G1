@@ -1,0 +1,331 @@
+
+import React, { useState } from 'react';
+import { GeneratedContent, ContentFormat } from '../types';
+import { CopyToClipboard } from './CopyToClipboard';
+import { Sparkles, Hash, MessageSquare, Send, UserCheck, Copy, ThumbsUp, ThumbsDown, Zap, Save, Loader2, Smartphone, Instagram, Linkedin, Mail, Heart, MessageCircle, Share2, Bookmark, MoreHorizontal } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
+
+interface OutputSectionProps {
+  content: GeneratedContent;
+  onHumanize: () => void;
+  isHumanizing?: boolean;
+  format?: ContentFormat;
+}
+
+const RichTextRenderer = ({ text }: { text: string }) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, lineIdx) => {
+         if (!line.trim()) return <br key={lineIdx} className="content-spacer" />;
+         if (line.trim() === '---' || line.trim() === '***') return <hr key={lineIdx} className="my-3 border-gray-200" />;
+         
+         // List detection
+         if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
+             return (
+                 <div key={lineIdx} className="flex gap-2 pl-1">
+                     <span className="text-gray-400">•</span>
+                     <span className="flex-1">{parseRichText(line.substring(2))}</span>
+                 </div>
+             )
+         }
+
+         return (
+           <p key={lineIdx} className="leading-relaxed">
+             {parseRichText(line)}
+           </p>
+         );
+      })}
+    </div>
+  );
+};
+
+const parseRichText = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*|~~.*?~~|`.*?`)/g);
+    return parts.map((part, partIdx) => {
+        if (part.startsWith('**') && part.endsWith('**')) return <strong key={partIdx} className="font-extrabold text-gray-900">{part.slice(2, -2)}</strong>;
+        if (part.startsWith('~~') && part.endsWith('~~')) return <s key={partIdx} className="text-gray-400 decoration-gray-400 decoration-2">{part.slice(2, -2)}</s>;
+        if (part.startsWith('`') && part.endsWith('`')) return <code key={partIdx} className="bg-gray-100 text-red-600 px-1 py-0.5 rounded font-mono text-xs">{part.slice(1, -1)}</code>;
+        return part;
+    });
+}
+
+// Wrapper for visual context
+const PlatformPreview = ({ children, format, angle }: { children?: React.ReactNode, format?: ContentFormat, angle?: string }) => {
+    if (format === ContentFormat.INSTAGRAM_POST || format === ContentFormat.FACEBOOK_AD) {
+        return (
+            <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm max-w-md mx-auto">
+                <div className="p-3 flex items-center justify-between border-b border-gray-50">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[1px]">
+                            <div className="w-full h-full bg-white rounded-full p-0.5">
+                                <div className="w-full h-full bg-gray-200 rounded-full"></div>
+                            </div>
+                        </div>
+                        <div className="text-xs">
+                            <p className="font-bold text-gray-900">YourBrand</p>
+                            <p className="text-[10px] text-gray-500">Sponsored • {angle || 'Promotion'}</p>
+                        </div>
+                    </div>
+                    <MoreHorizontal className="w-4 h-4 text-gray-400"/>
+                </div>
+                <div className="bg-gray-100 aspect-square flex items-center justify-center text-gray-400">
+                    <span className="text-xs">[Image/Video Placeholder]</span>
+                </div>
+                <div className="p-3">
+                    <div className="flex justify-between mb-2">
+                        <div className="flex gap-3">
+                            <Heart className="w-5 h-5 text-gray-800"/>
+                            <MessageCircle className="w-5 h-5 text-gray-800"/>
+                            <Share2 className="w-5 h-5 text-gray-800"/>
+                        </div>
+                        <Bookmark className="w-5 h-5 text-gray-800"/>
+                    </div>
+                    <div className="text-xs text-gray-900 mb-1 font-bold">1,234 likes</div>
+                    <div className="text-xs text-gray-800">
+                        <span className="font-bold mr-1">YourBrand</span>
+                        {children}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+    
+    if (format === ContentFormat.EMAIL_MARKETING) {
+        return (
+            <div className="border border-gray-200 rounded-xl bg-white shadow-sm p-6 max-w-2xl mx-auto font-serif">
+                <div className="border-b border-gray-100 pb-4 mb-4">
+                    <p className="text-xs text-gray-500 mb-1">Subject:</p>
+                    <h3 className="font-bold text-gray-900 text-lg">{angle || 'Subject Line'}</h3>
+                </div>
+                <div className="text-gray-800 text-sm leading-relaxed">
+                    {children}
+                </div>
+            </div>
+        )
+    }
+
+    if (format === ContentFormat.TIKTOK_SCRIPT || format === ContentFormat.TIKTOK_LIVE) {
+        return (
+            <div className="bg-gray-900 text-gray-200 rounded-xl p-6 font-mono text-xs leading-relaxed max-w-md mx-auto border-l-4 border-cyan-400 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 text-gray-400 uppercase font-bold tracking-widest border-b border-gray-800 pb-2">
+                    <Smartphone className="w-4 h-4" /> Script Mode
+                </div>
+                {children}
+            </div>
+        )
+    }
+
+    // Default Card
+    return (
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm text-sm text-gray-800">
+            {children}
+        </div>
+    );
+}
+
+export const OutputSection: React.FC<OutputSectionProps> = ({ content, onHumanize, isHumanizing = false, format }) => {
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, string>>({});
+
+  const handleFeedback = async (id: string, type: 'positive' | 'negative', text: string) => {
+    setFeedbackGiven(prev => ({ ...prev, [id]: type }));
+    
+    // Log to DB
+    const key = localStorage.getItem('taap_genpro_v4_license');
+    if (key) {
+        await supabase.from('feedback_logs').insert({
+            license_key: key,
+            rating: type,
+            content_snippet: text.substring(0, 100) + '...'
+        });
+    }
+  };
+  
+  const getAllContentText = () => {
+    if (!content) return "";
+    const { hooks = [], posts = [], hashtags = [], ctas = [] } = content;
+    const separator = "--------------------------------------------------";
+    let text = `🔥 TAAP GENPRO V7.0 OUTPUT 🔥\n\n`;
+    text += `${separator}\n10 VIRAL HOOKS\n${separator}\n`;
+    hooks.forEach((hook, i) => text += `${i + 1}. ${hook}\n`);
+    text += "\n";
+    text += `${separator}\n5 STRATEGIC POSTS\n${separator}\n`;
+    posts.forEach((post, i) => {
+      // Safe access to angle
+      const safeAngle = post.angle ? post.angle.toUpperCase() : `STRATEGY ${i+1}`;
+      text += `\n[POST ${i + 1}: ${safeAngle}]\n`;
+      text += `HOOK: ${post.hook}\n`;
+      text += `BODY:\n${post.body}\n`;
+      text += `CTA: ${post.cta}\n`;
+    });
+    text += "\n";
+    text += `${separator}\nHASHTAGS\n${separator}\n`;
+    text += hashtags.join(" ") + "\n\n";
+    text += `${separator}\nVARIASI CTA\n${separator}\n`;
+    ctas.forEach(cta => text += `- ${cta}\n`);
+    return text;
+  };
+
+  const allContent = getAllContentText();
+
+  // Safety check for empty content
+  if (!content) return null;
+
+  return (
+    <div className="space-y-10 animate-fade-in pb-20">
+      
+      {/* Top Actions */}
+      <div className="flex flex-col gap-4">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between text-xs md:text-sm text-green-800 shadow-sm">
+            <div className="flex items-center gap-2">
+                <div className="bg-green-100 p-1.5 rounded-full"><Save className="w-4 h-4 text-green-600"/></div>
+                <span className="font-bold">Output saved automatically to Neural Vault.</span>
+            </div>
+            <span className="text-green-600 opacity-70 font-mono">Just now</span>
+        </div>
+
+        <CopyToClipboard 
+            text={allContent}
+            label="COPY ALL OUTPUT (ALL-IN-ONE)"
+            copiedLabel="COPIED ALL!"
+            className="w-full py-4 text-base font-bold bg-gray-900 hover:bg-black text-white shadow-xl rounded-xl flex items-center justify-center gap-2 transform transition-transform active:scale-95 border-2 border-transparent"
+        />
+
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3">
+                <div className="bg-white p-2 rounded-full text-orange-600 border border-orange-100">
+                <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                <h4 className="font-bold text-gray-900 text-sm md:text-base">Sound too robotic?</h4>
+                <p className="text-xs md:text-sm text-gray-600">Adjust tone to be more "human", natural & authentic.</p>
+                </div>
+            </div>
+            <button 
+                onClick={onHumanize}
+                disabled={isHumanizing}
+                className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed border border-transparent active:scale-95"
+            >
+                {isHumanizing ? <><Loader2 className="w-4 h-4 animate-spin"/> Processing...</> : <><UserCheck className="w-4 h-4" /> Humanize It</>}
+            </button>
+        </div>
+      </div>
+
+      {/* 1. HOOKS SECTION - Improved Card Layout */}
+      <div>
+        <div className="flex items-center gap-2 mb-4 px-2">
+            <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><Sparkles className="w-5 h-5" /></div>
+            <h3 className="text-xl font-black text-gray-900">10 Viral Hooks</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {content.hooks?.map((hook, index) => (
+                <div key={index} className="group relative bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-200 flex flex-col justify-between">
+                    <div className="flex gap-3 mb-2">
+                        <span className="text-orange-500 font-black text-lg select-none opacity-50">{index + 1}</span>
+                        <div className="text-gray-800 font-medium text-sm leading-relaxed">
+                            <RichTextRenderer text={hook} />
+                        </div>
+                    </div>
+                    <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <CopyToClipboard text={hook} label="Copy" className="text-[10px] py-1 px-3 h-auto" />
+                    </div>
+                </div>
+            )) || <div className="p-4 text-gray-500 text-sm">No hooks generated.</div>}
+        </div>
+      </div>
+
+      {/* 2. POSTS SECTION - Platform Specific Preview */}
+      <div className="space-y-8">
+        <div className="flex items-center gap-3 px-2 border-b border-gray-200 pb-3">
+            <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><MessageSquare className="w-5 h-5" /></div>
+            <div>
+                <h3 className="text-xl font-black text-gray-900">5 High-Impact Posts</h3>
+                <p className="text-xs text-gray-500 font-medium">Generated for {format || 'General'}</p>
+            </div>
+        </div>
+        
+        {content.posts?.map((post, index) => (
+          <div key={index} className="space-y-3">
+             <div className="flex items-center justify-between px-2">
+                 <div className="flex items-center gap-2">
+                     <span className="bg-gray-900 text-white text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-yellow-400" /> {post.angle || `Angle ${index+1}`}
+                     </span>
+                 </div>
+                 <div className="flex gap-2">
+                     <button onClick={() => handleFeedback(`post-${index}`, 'positive', post.hook)} className={`p-1.5 rounded hover:bg-green-50 ${feedbackGiven[`post-${index}`] === 'positive' ? 'text-green-600' : 'text-gray-400'}`}><ThumbsUp className="w-4 h-4" /></button>
+                     <button onClick={() => handleFeedback(`post-${index}`, 'negative', post.hook)} className={`p-1.5 rounded hover:bg-red-50 ${feedbackGiven[`post-${index}`] === 'negative' ? 'text-red-600' : 'text-gray-400'}`}><ThumbsDown className="w-4 h-4" /></button>
+                 </div>
+             </div>
+
+             {/* PREVIEW WRAPPER */}
+             <PlatformPreview format={format} angle={post.angle}>
+                 <div className="space-y-4">
+                    {/* Hook Visualization based on format */}
+                    {format !== ContentFormat.EMAIL_MARKETING && (
+                        <div className="font-bold mb-2">
+                            <RichTextRenderer text={post.hook} />
+                        </div>
+                    )}
+                    
+                    <div className="opacity-90">
+                        <RichTextRenderer text={post.body} />
+                    </div>
+                    
+                    {post.cta && (
+                        <div className="mt-4 pt-4 border-t border-dashed border-gray-300/50">
+                            <p className="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1">Call to Action</p>
+                            <RichTextRenderer text={post.cta} />
+                        </div>
+                    )}
+                 </div>
+             </PlatformPreview>
+
+             <div className="flex justify-end px-2">
+                 <CopyToClipboard text={`${post.hook}\n\n${post.body}\n\n${post.cta}`} label="Copy Post Content" className="bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 border border-gray-200" />
+             </div>
+          </div>
+        )) || <div className="p-4 text-gray-500 text-sm">No posts generated.</div>}
+      </div>
+
+      {/* 3. HASHTAGS & CTA */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 md:p-6">
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-200 pb-3">
+                <Hash className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base md:text-lg font-bold text-gray-900">Hashtag Bank</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {content.hashtags?.map((tag, i) => (
+                    <CopyToClipboard key={i} text={tag} className="!p-0 !bg-transparent !shadow-none hover:!bg-transparent">
+                         <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-orange-50 text-orange-700 hover:bg-orange-600 hover:text-white transition-all cursor-pointer border border-orange-100 shadow-sm active:scale-95">
+                            {tag}
+                        </span>
+                    </CopyToClipboard>
+                ))}
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 text-right">
+                <CopyToClipboard text={(content.hashtags || []).join(' ')} label="Copy All Hashtags" className="text-xs bg-gray-50 text-gray-600 border border-gray-200" />
+            </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 md:p-6">
+            <div className="flex items-center gap-2 mb-4 border-b border-gray-200 pb-3">
+                <Send className="w-5 h-5 text-orange-600" />
+                <h3 className="text-base md:text-lg font-bold text-gray-900">Alternative CTAs</h3>
+            </div>
+            <ul className="space-y-2">
+                {content.ctas?.map((cta, i) => (
+                    <li key={i} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100 hover:border-orange-200 hover:bg-orange-50 transition-colors group">
+                        <span className="text-gray-800 text-xs font-medium"><RichTextRenderer text={cta} /></span>
+                        <CopyToClipboard text={cta} className="opacity-0 group-hover:opacity-100 transition-opacity scale-90 h-8 w-8 !p-0 !bg-white border border-gray-200 text-gray-500 hover:!text-orange-600" label="" />
+                    </li>
+                ))}
+            </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
