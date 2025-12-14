@@ -310,8 +310,13 @@ export const generateAIImages = async (params: ImageGenerationParams, key: strin
 export const generateAIVideo = async (params: VideoGenerationParams, key: string, cost: number, onProgress: (m: string) => void) => {
   const newBalance = await secureDeduct(key, cost, 'video_generation');
   try {
-    onProgress("Initializing Session...");
+    onProgress("Connecting to Neural Nodes...");
     const currentKey = process.env.API_KEY!;
+    
+    if (!currentKey) {
+        throw new Error("System configuration error: API Key missing.");
+    }
+
     const aiVideo = new GoogleGenAI({ apiKey: currentKey });
     
     const finalPrompt = enhancePrompt('video', params.prompt);
@@ -331,20 +336,45 @@ export const generateAIVideo = async (params: VideoGenerationParams, key: string
         };
     }
 
+    onProgress("Submitting to Veo Engine...");
     let operation = await aiVideo.models.generateVideos(request);
 
+    // Polling Loop
+    let attempts = 0;
     while (!operation.done) {
-      await new Promise(r => setTimeout(r, 10000));
-      onProgress("Neural Nodes Rendering... (~60s)");
+      if (attempts > 30) throw new Error("Video generation timed out."); // 30 * 5s = 150s max
+      await new Promise(r => setTimeout(r, 5000));
+      attempts++;
+      onProgress(`Neural Nodes Rendering... (${attempts * 5}s)`);
       operation = await aiVideo.operations.getVideosOperation({ operation: operation });
     }
 
     const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!uri) throw new Error("Video generation failed (No URI)");
+    if (!uri) throw new Error("Video generation completed but returned no output.");
 
-    const body = await fetch(`${uri}&key=${currentKey}`);
-    return { videoUrl: URL.createObjectURL(await body.blob()), newBalance };
-  } catch (e) { await secureRefund(key, cost); throw e; }
+    onProgress("Downloading Stream...");
+    
+    // HYBRID FETCH STRATEGY:
+    // 1. Try to fetch as blob (Best for user experience, hides API key)
+    // 2. If fetch fails (CORS), return the URI directly so the <video> tag can load it.
+    try {
+        const body = await fetch(`${uri}&key=${currentKey}`);
+        if (!body.ok) throw new Error("Fetch failed");
+        const blob = await body.blob();
+        return { videoUrl: URL.createObjectURL(blob), newBalance, type: 'blob' };
+    } catch (fetchError) {
+        console.warn("Direct video fetch failed (likely CORS), falling back to remote URL.", fetchError);
+        // Fallback: Return the raw signed URL. 
+        // NOTE: This exposes the API key in the HTML source of the <video> tag, 
+        // but it is the only way to make it work if CORS blocks the fetch.
+        return { videoUrl: `${uri}&key=${currentKey}`, newBalance, type: 'remote' };
+    }
+
+  } catch (e) { 
+      await secureRefund(key, cost); 
+      console.error("Video Gen Error:", e);
+      throw e; 
+  }
 };
 
 export const generateMarketingContent = async (formData: FormData, trends: string, isHuman: boolean, key: string, cost: number) => {

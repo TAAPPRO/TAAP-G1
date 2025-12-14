@@ -51,9 +51,8 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
 
       setGeneratedVideos([{ url: videoUrl, prompt }, ...generatedVideos]);
       onBalanceUpdate(newBalance);
-      // Optional: Clear prompt after success? keeping it might be better for tweaks.
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Failed to generate video. Please try again.");
     } finally {
       setIsGenerating(false);
       setProgressMsg("");
@@ -78,7 +77,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
              <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
                 <Film className="w-6 h-6 text-orange-600" /> Neural Video Studio
              </h2>
-             <p className="text-xs text-gray-500 mt-1">Create cinematic videos in 30-60 seconds.</p>
+             <p className="text-xs text-gray-500 mt-1">Create cinematic videos in 60-90 seconds.</p>
           </div>
 
           <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex flex-col gap-2">
@@ -87,7 +86,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                Enterprise Mode Active
              </div>
              <p className="text-[10px] text-blue-600">
-               Generating via TAAP Enterprise Node. No personal API key required.
+               Generating via TAAP System Node. High-performance rendering enabled.
              </p>
           </div>
 
@@ -148,7 +147,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                 className="w-full py-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-lg rounded-xl shadow-lg hover:shadow-orange-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed transform active:scale-95"
               >
                   {isGenerating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5 fill-current"/>}
-                  {isGenerating ? "Generating Video..." : (
+                  {isGenerating ? "Processing..." : (
                       <span className="flex items-center gap-1">TAAP-NOW (Generate) <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] flex items-center gap-0.5"><Zap className="w-3 h-3 fill-current text-yellow-300" /><Zap className="w-3 h-3 fill-current text-yellow-300" /> High Energy</span></span>
                   )}
               </button>
@@ -194,7 +193,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                     </div>
                     <div>
                         <p className="text-white font-bold text-lg animate-pulse">Processing Neural Video...</p>
-                        <p className="text-gray-500 text-xs mt-1 max-w-xs mx-auto">This process takes about 60-90 seconds. Do not close this tab.</p>
+                        <p className="text-gray-500 text-xs mt-1 max-w-xs mx-auto">Rendering on Enterprise Nodes. This takes about 60-90 seconds.</p>
                     </div>
                 </div>
             ) : generatedVideos.length === 0 ? (
@@ -213,6 +212,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                                 <video 
                                     src={vid.url} 
                                     controls 
+                                    playsInline
                                     className="w-full h-full object-contain" 
                                     poster="https://via.placeholder.com/640x360.png?text=Video+Ready"
                                 />
@@ -221,6 +221,8 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                                 <p className="text-[10px] text-gray-400 line-clamp-2 mb-2 font-mono">{vid.prompt}</p>
                                 <a 
                                     href={vid.url} 
+                                    target="_blank"
+                                    rel="noreferrer"
                                     download={`TAAP-VEO-${Date.now()}.mp4`}
                                     className="w-full py-2 bg-white text-black rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
                                 >
@@ -240,7 +242,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
         onClose={() => setShowConfirm(false)}
         onConfirm={_executeGenerateVideo}
         title="Confirm Video Generation"
-        message="Video generation requires significant computing power. This will deduct 10 Neural Credits."
+        message="Video generation requires significant computing power. This action will use Neural Energy."
         confirmText="Yes, Create Video"
       />
     </div>

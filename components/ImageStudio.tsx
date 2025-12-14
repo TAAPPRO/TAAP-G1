@@ -318,7 +318,7 @@ export const ImageStudio: React.FC<ImageStudioProps> = ({ licenseKey, onBalanceU
         onClose={() => setShowConfirm(false)}
         onConfirm={_executeGenerateImage}
         title="Confirm Image Generation"
-        message="This action will consume Neural Energy from your battery. Proceed?"
+        message="This action will use Neural Energy. Proceed?"
         confirmText="Yes, Generate Visuals"
       />
     </div>

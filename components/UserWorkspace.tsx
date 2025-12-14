@@ -573,8 +573,8 @@ export const UserWorkspace: React.FC<UserWorkspaceProps> = ({ licenseKey, initia
       <UserGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} config={dynamicConfig} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} onRestore={handleRestoreFromHistory} />
       <AffiliateModal isOpen={isAffiliateOpen} onClose={() => setIsAffiliateOpen(false)} licenseKey={licenseKey} />
-      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message={`This action will consume ${dynamicConfig.costPerGen + (useTrends ? 2 : 0)} Neural Credits.`} confirmText="Yes, Proceed" />
-      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message={`This action will consume ${dynamicConfig.autofillCost} Neural Credits.`} confirmText="Yes, Auto-Fill" />
+      <ConfirmationModal isOpen={showConfirmGen} onClose={() => setShowConfirmGen(false)} onConfirm={() => _executeGenerate(false)} title="Confirm Generation" message="This action will use Neural Energy. Proceed?" confirmText="Yes, Proceed" />
+      <ConfirmationModal isOpen={showConfirmAuto} onClose={() => setShowConfirmAuto(false)} onConfirm={_executeAutofill} title="Confirm Auto-Fill" message="This action will use Neural Energy. Proceed?" confirmText="Yes, Auto-Fill" />
     
     </div>
   );

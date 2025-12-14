@@ -1,15 +1,167 @@
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Zap, BrainCircuit, MessageCircle, CheckCircle, ArrowRight, Star, TrendingUp, Users, ShieldCheck, Globe, Rocket, Database, Cpu, Share2, ChevronDown, Image as ImageIcon, Layers, Lock, PlayCircle, Smartphone, X, Menu, XCircle, CheckCircle2, Clock, DollarSign, BarChart3, Search, PenTool, Wand2, FileText, Monitor, MoreHorizontal, Film, Server } from 'lucide-react';
+import { Sparkles, Zap, BrainCircuit, MessageCircle, CheckCircle, ArrowRight, Star, TrendingUp, Users, ShieldCheck, Globe, Rocket, Database, Cpu, Share2, ChevronDown, Image as ImageIcon, Layers, Lock, PlayCircle, Smartphone, X, Menu, XCircle, CheckCircle2, Clock, DollarSign, BarChart3, Search, PenTool, Wand2, FileText, Monitor, MoreHorizontal, Film, Server, HeartHandshake, Box, Upload, Plus } from 'lucide-react';
 import { LegalModalType } from './LegalModals';
 
 interface LandingPageProps {
   onLogin: () => void;
   onRegister: () => void;
   onOpenLegal: (type: LegalModalType) => void;
+  onOpenPartner: () => void; // Added prop
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, onOpenLegal }) => {
+const WorkspaceSimulation = () => {
+  const [activeTab, setActiveTab] = useState('manual');
+
+  return (
+    <div className="w-full max-w-5xl mx-auto mt-16 relative z-20 animate-fade-in-up delay-300">
+      {/* Tab Navigation */}
+      <div className="flex justify-center mb-6">
+         <div className="w-full max-w-4xl bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-xl border border-gray-200/60 relative mx-4 md:mx-0">
+            <div className="flex gap-1 overflow-x-auto no-scrollbar snap-x">
+                <button onClick={() => setActiveTab('auto')} className={`flex-1 min-w-[90px] py-3 rounded-xl text-xs md:text-sm font-bold flex flex-col items-center gap-1 transition-all ${activeTab === 'auto' ? 'bg-orange-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}><Wand2 className="w-4 h-4" /><span>Magic Auto-Fill</span></button>
+                <button onClick={() => setActiveTab('manual')} className={`flex-1 min-w-[90px] py-3 rounded-xl text-xs md:text-sm font-bold flex flex-col items-center gap-1 transition-all ${activeTab === 'manual' ? 'bg-orange-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}><PenTool className="w-4 h-4" /><span>Manual Input</span></button>
+                <button onClick={() => setActiveTab('image')} className={`flex-1 min-w-[90px] py-3 rounded-xl text-xs md:text-sm font-bold flex flex-col items-center gap-1 transition-all ${activeTab === 'image' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}><ImageIcon className="w-4 h-4" /><span>Image Studio</span></button>
+                <button onClick={() => setActiveTab('video')} className={`flex-1 min-w-[90px] py-3 rounded-xl text-xs md:text-sm font-bold flex flex-col items-center gap-1 transition-all ${activeTab === 'video' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}><Film className="w-4 h-4" /><span>Veo Video</span></button>
+            </div>
+         </div>
+      </div>
+
+      {/* Content Area (Pointer Events None for Inputs to simulate read-only) */}
+      <div className="mx-4 md:mx-0 select-none">
+        {activeTab === 'auto' && (
+            <div className="bg-white rounded-3xl shadow-2xl border border-indigo-100 p-8 text-center max-w-2xl mx-auto relative overflow-hidden group">
+                <div className="absolute inset-0 z-50 bg-white/0 cursor-not-allowed"></div>
+                <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Wand2 className="w-10 h-10 text-indigo-600" />
+                </div>
+                <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Magic Auto-Fill</h2>
+                <p className="text-gray-500 mb-8 max-w-md mx-auto">Enter product name, and let the Neural Engine find sales details for you.</p>
+                <div className="relative max-w-lg mx-auto">
+                    <input readOnly value="Sambal Nyet Berapi" className="w-full p-5 border-2 border-indigo-100 rounded-2xl outline-none text-lg font-medium text-center shadow-sm text-gray-800 bg-white" />
+                </div>
+                <button className="w-full max-w-lg bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg mt-6 flex items-center justify-center gap-2">
+                    <Sparkles className="w-5 h-5" /> TAAP-NOW (Generate)
+                </button>
+            </div>
+        )}
+
+        {activeTab === 'manual' && (
+            <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 p-6 md:p-8 relative overflow-hidden group">
+                 <div className="absolute inset-0 z-50 bg-white/0 cursor-not-allowed"></div>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-6">
+                        <h3 className="text-lg font-bold text-gray-900 border-b border-gray-100 pb-3 flex items-center gap-2">
+                            <Box className="w-5 h-5 text-orange-600" /> Product Information
+                        </h3>
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-center bg-gray-50">
+                             <div className="bg-orange-100 p-3 rounded-full mb-3"><Upload className="w-6 h-6 text-orange-600" /></div>
+                             <p className="text-sm text-gray-700 font-bold">Muat Naik Imej Produk</p>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Product Name</label>
+                                <input readOnly value="Sambal Nyet Berapi" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Key Benefits</label>
+                                <textarea readOnly value="- Pedas berapi&#10;- Bikin ketagih&#10;- Resepi asli Khairul Aming" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg min-h-[100px] text-gray-900" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-6">
+                        <h3 className="text-lg font-bold text-gray-900 border-b border-gray-100 pb-3 flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-orange-600" /> Marketing Strategy
+                        </h3>
+                        <div className="grid grid-cols-2 gap-4">
+                             <div className="p-3 rounded-lg border border-orange-500 bg-orange-50 ring-1 ring-orange-300">
+                                 <div className="flex items-center gap-2 mb-2"><div className="p-1.5 rounded-md bg-orange-200 text-orange-700"><Smartphone className="w-4 h-4"/></div><h4 className="text-xs font-extrabold text-orange-900">TikTok Script</h4></div>
+                                 <p className="text-[10px] text-gray-500">Short Video Script</p>
+                             </div>
+                             <div className="p-3 rounded-lg border border-gray-200 bg-white opacity-50">
+                                 <div className="flex items-center gap-2 mb-2"><div className="p-1.5 rounded-md bg-gray-100 text-gray-600"><MessageCircle className="w-4 h-4"/></div><h4 className="text-xs font-extrabold text-gray-800">WhatsApp</h4></div>
+                                 <p className="text-[10px] text-gray-500">Broadcast</p>
+                             </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Language</label>
+                                <div className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-900">Bahasa Melayu (Santai)</div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tone</label>
+                                <div className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-900">Kakak Vibe (Friendly)</div>
+                            </div>
+                        </div>
+                        <button className="w-full py-4 rounded-xl font-bold text-lg shadow-lg bg-gradient-to-r from-orange-600 to-amber-600 text-white flex items-center justify-center gap-2 mt-4">
+                            <Sparkles className="w-5 h-5 fill-white" /> TAAP-NOW (Generate)
+                        </button>
+                    </div>
+                 </div>
+            </div>
+        )}
+
+        {activeTab === 'image' && (
+            <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 p-6 md:p-8 relative overflow-hidden group">
+                <div className="absolute inset-0 z-50 bg-white/0 cursor-not-allowed"></div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    <div className="lg:col-span-4 space-y-6">
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2"><span className="bg-gray-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> Upload Product</h3>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="aspect-square rounded-lg border-2 border-dashed border-orange-500 bg-orange-50 flex items-center justify-center"><CheckCircle2 className="w-6 h-6 text-orange-500"/></div>
+                                <div className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center"><Plus className="w-6 h-6 text-gray-300"/></div>
+                            </div>
+                        </div>
+                        <div className="space-y-3 pt-4 border-t border-gray-100">
+                            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2"><span className="bg-gray-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> Prompt</h3>
+                            <textarea readOnly value="Professional photoshoot of Sambal jar on a wooden table, morning sunlight, cozy vibes, 4k resolution." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm min-h-[100px]" />
+                        </div>
+                        <button className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
+                            <Sparkles className="w-5 h-5 fill-current"/> Generate Visuals
+                        </button>
+                    </div>
+                    <div className="lg:col-span-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 min-h-[300px] flex items-center justify-center">
+                        <div className="text-center text-gray-400">
+                            <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50"/>
+                            <p className="text-sm font-bold">Studio Results Appear Here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {activeTab === 'video' && (
+            <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 p-6 md:p-8 relative overflow-hidden group">
+                <div className="absolute inset-0 z-50 bg-white/0 cursor-not-allowed"></div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    <div className="lg:col-span-4 space-y-6">
+                        <div className="text-left border-b border-gray-100 pb-4">
+                            <h2 className="text-xl font-black text-gray-900 flex items-center gap-2"><Film className="w-6 h-6 text-orange-600"/> Neural Video</h2>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black text-gray-500 uppercase mb-2">Video Prompt</label>
+                            <textarea readOnly value="Cinematic slow motion shot of spicy sambal being poured onto hot steaming rice, 4k, photorealistic." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm min-h-[120px]" />
+                        </div>
+                        <button className="w-full py-4 bg-gray-900 text-white font-bold text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
+                            <Zap className="w-5 h-5 text-yellow-400 fill-current"/> Create Video
+                        </button>
+                    </div>
+                    <div className="lg:col-span-8 bg-black rounded-2xl border border-gray-800 min-h-[300px] flex items-center justify-center relative overflow-hidden">
+                        <div className="text-center text-gray-600">
+                            <Film className="w-12 h-12 mx-auto mb-2 opacity-50"/>
+                            <p className="text-sm font-bold">Video Output Area</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, onOpenLegal, onOpenPartner }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -25,11 +177,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
           sessionStorage.clear();
           window.location.reload();
       }
-  };
-
-  const scrollToSection = (id: string) => {
-      setMobileMenuOpen(false);
-      document.getElementById(id)?.scrollIntoView({behavior: 'smooth'});
   };
 
   return (
@@ -48,6 +195,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
           
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-4">
+             <button 
+                onClick={onOpenPartner}
+                className="text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors px-3 py-2 uppercase tracking-wide flex items-center gap-1 hover:bg-gray-100 rounded-lg"
+             >
+                <HeartHandshake className="w-3 h-3" /> Partner Program
+             </button>
+             <div className="h-4 w-px bg-gray-300 mx-2"></div>
              <button 
                 onClick={onLogin}
                 className="text-sm font-bold text-gray-900 hover:text-orange-600 transition-colors px-4 py-2"
@@ -72,6 +226,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
         {/* Mobile Nav Dropdown */}
         {mobileMenuOpen && (
             <div className="md:hidden absolute top-full left-0 w-full bg-white/95 backdrop-blur-xl border-b border-gray-200 p-6 flex flex-col gap-4 shadow-2xl animate-fade-in-up">
+                <button onClick={onOpenPartner} className="w-full py-3 text-left font-bold text-gray-600 border-b border-gray-100 flex items-center gap-2"><HeartHandshake className="w-4 h-4"/> Partner Program</button>
                 <button onClick={onLogin} className="w-full py-4 bg-gray-50 rounded-2xl text-base font-bold text-gray-900 border border-gray-100 active:scale-95 transition-transform mt-2">Member Login</button>
                 <button onClick={onRegister} className="w-full py-4 bg-orange-600 text-white rounded-2xl text-base font-bold shadow-lg shadow-orange-500/30 active:scale-95 transition-transform">Subscribe Now</button>
             </div>
@@ -86,7 +241,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
          <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-200/30 rounded-full blur-[120px] pointer-events-none"></div>
 
          <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10">
-            <div className="text-center max-w-5xl mx-auto mb-16">
+            <div className="text-center max-w-5xl mx-auto mb-12">
                 
                 {/* Announcement Pill */}
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-50 border border-orange-100 text-orange-700 text-[10px] md:text-xs font-bold uppercase tracking-wide mb-8 hover:bg-white hover:shadow-md transition-all cursor-default animate-fade-in-up">
@@ -145,37 +300,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onRegister, o
                 </div>
             </div>
 
-            {/* --- STATIC MOCKUP (REPLACED ANIMATION FOR STABILITY) --- */}
-            <div className="relative mx-auto max-w-4xl mt-16 animate-fade-in-up delay-500 hover:scale-[1.01] transition-transform duration-500">
-                <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-purple-600 rounded-[2.5rem] blur-xl opacity-20"></div>
-                
-                <div className="relative bg-[#0F172A] rounded-[2rem] shadow-2xl border border-gray-800 overflow-hidden text-left h-auto min-h-[350px]">
-                    <div className="flex items-center px-6 py-4 border-b border-gray-800/80 bg-[#1E293B]/80 backdrop-blur">
-                        <div className="flex gap-2">
-                            <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
-                            <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-sm"></div>
-                            <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm"></div>
-                        </div>
-                        <div className="flex-1 text-center">
-                            <span className="font-mono text-xs text-gray-500 font-medium">TAAP_Engine_V7.0_Ready</span>
-                        </div>
-                    </div>
-
-                    <div className="p-8 md:p-12 font-mono text-sm md:text-lg leading-relaxed space-y-6 text-gray-300">
-                        <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4">
-                            <span className="text-green-400 font-bold shrink-0">➜  Input:</span>
-                            <span className="text-white">Sambal Nyet Berapi</span>
-                        </div>
-                        <div className="pl-4 border-l-2 border-orange-500/50 text-white italic bg-white/5 p-4 rounded-r-xl">
-                            "Demo jange duk nunggu lamo boh! 🔥 Stok kalini sikit jah, lambat tinggal habuk. Pedas dia toksoh kato, make nasi putih sajo pun nambah 3 pingge! 🌶️"
-                        </div>
-                        <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-3">
-                            <span className="text-yellow-400 font-bold">➜  Status:</span>
-                            <span className="text-green-400 bg-green-400/10 border border-green-400/20 px-3 py-1 rounded-md text-xs md:text-sm font-bold w-fit">Viral Hook Generated Successfully.</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {/* --- WORKSPACE SIMULATION --- */}
+            <WorkspaceSimulation />
+            
          </div>
       </header>
 

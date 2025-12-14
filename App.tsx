@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabaseClient';
 import { AuthScreen } from './components/AuthScreen';
@@ -8,6 +7,7 @@ import AdminDashboard from './components/AdminDashboard';
 import { AboutModal } from './components/AboutModal';
 import { RegistrationScreen } from './components/RegistrationScreen';
 import { LandingPage } from './components/LandingPage';
+import { PartnerProgramPage } from './components/PartnerProgramPage';
 import { LegalModal, LegalModalType } from './components/LegalModals';
 import { WalletModal } from './components/WalletModal';
 import { Loader2 } from 'lucide-react'; 
@@ -20,7 +20,7 @@ const CURRENT_APP_VERSION = "7.0.0-VEO";
 const App: React.FC = () => {
   // Simplified state - Removed 'updating' to prevent stuck screens
   const [status, setStatus] = useState<'initializing' | 'auth_required' | 'operational'>('initializing');
-  const [view, setView] = useState<'landing' | 'login' | 'app' | 'admin' | 'register'>('landing');
+  const [view, setView] = useState<'landing' | 'login' | 'app' | 'admin' | 'register' | 'partner'>('landing');
   const [licenseKey, setLicenseKey] = useState("");
   const [credits, setCredits] = useState(0);
   const [config, setConfig] = useState({ costPerGen: 1, autofillCost: 1 });
@@ -126,7 +126,8 @@ const App: React.FC = () => {
     <>
         {view === 'admin' ? <AdminDashboard onExit={() => setView('login')} /> :
          view === 'register' ? <RegistrationScreen onBack={() => setView('landing')} onShowTerms={() => setActiveLegalModal('terms')} /> :
-         view === 'landing' ? <LandingPage onLogin={() => setView('login')} onRegister={() => setView('register')} onOpenLegal={setActiveLegalModal} /> :
+         view === 'partner' ? <PartnerProgramPage onBack={() => setView('landing')} onLogin={() => setView('login')} onRegister={() => setView('register')} /> :
+         view === 'landing' ? <LandingPage onLogin={() => setView('login')} onRegister={() => setView('register')} onOpenLegal={setActiveLegalModal} onOpenPartner={() => setView('partner')} /> :
          view === 'login' ? <AuthScreen onVerify={(k) => verifyLicense(k, false)} isLoading={isVerifying} error={authError} onAdminLogin={() => setView('admin')} onRegister={() => setView('register')} onRenew={handleQuickRenew} onBack={() => setView('landing')} /> :
          <UserWorkspace licenseKey={licenseKey} initialCredits={credits} config={config} onLogout={() => {localStorage.removeItem(LICENSE_KEY_STORAGE); setView('landing');}} onShowAbout={() => setShowAbout(true)} />}
         
