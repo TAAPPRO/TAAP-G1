@@ -10,15 +10,15 @@ import { LandingPage } from './components/LandingPage';
 import { PartnerProgramPage } from './components/PartnerProgramPage';
 import { LegalModal, LegalModalType } from './components/LegalModals';
 import { WalletModal } from './components/WalletModal';
-import { Loader2 } from 'lucide-react'; 
+import { Loader2, RefreshCw, Download } from 'lucide-react'; 
 
 const LICENSE_KEY_STORAGE = "taap_genpro_v4_license";
 const APP_VERSION_STORAGE = "taap_version_tracker";
 const PENDING_REF_STORAGE = "taap_pending_ref";
-const CURRENT_APP_VERSION = "7.0.0-VEO"; 
+const CURRENT_APP_VERSION = "7.1.3"; // Updated Version for Error Handler Fix
 
 const App: React.FC = () => {
-  // Simplified state - Removed 'updating' to prevent stuck screens
+  // Simplified state
   const [status, setStatus] = useState<'initializing' | 'auth_required' | 'operational'>('initializing');
   const [view, setView] = useState<'landing' | 'login' | 'app' | 'admin' | 'register' | 'partner'>('landing');
   const [licenseKey, setLicenseKey] = useState("");
@@ -33,6 +33,10 @@ const App: React.FC = () => {
   const [isRenewalOpen, setIsRenewalOpen] = useState(false);
   const [renewalKey, setRenewalKey] = useState("");
 
+  // Update System State
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [newVersion, setNewVersion] = useState("");
+
   useEffect(() => {
     // 1. Capture URL Params (Referral & Magic Link)
     const urlParams = new URLSearchParams(window.location.search);
@@ -45,19 +49,30 @@ const App: React.FC = () => {
 
     if (magicKey) {
         localStorage.setItem(LICENSE_KEY_STORAGE, magicKey.trim());
-        // Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
     } else if (ref) {
-        // Clean URL if only ref
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    // 2. Silent Version Update (No Reloads)
-    const savedVersion = localStorage.getItem(APP_VERSION_STORAGE);
-    if (savedVersion !== CURRENT_APP_VERSION) {
-        console.log(`[System] Upgrading schema: ${savedVersion} -> ${CURRENT_APP_VERSION}`);
-        localStorage.setItem(APP_VERSION_STORAGE, CURRENT_APP_VERSION);
-    }
+    // 2. Silent Version Update Check & Cache Clear
+    const checkVersion = async () => {
+        try {
+            // Cache-busting fetch for metadata
+            const res = await fetch(`/metadata.json?t=${Date.now()}`);
+            const meta = await res.json();
+            
+            if (meta.version && meta.version !== CURRENT_APP_VERSION) {
+                console.log(`Update Detected: ${CURRENT_APP_VERSION} -> ${meta.version}`);
+                setNewVersion(meta.version);
+                setUpdateAvailable(true);
+            }
+        } catch (e) {
+            console.warn("Version check failed", e);
+        }
+    };
+
+    checkVersion();
+    const interval = setInterval(checkVersion, 30000); // Check every 30 seconds
 
     // 3. Check Login Status
     const storedKey = localStorage.getItem(LICENSE_KEY_STORAGE);
@@ -67,7 +82,22 @@ const App: React.FC = () => {
         setStatus('auth_required');
         setView('landing');
     }
+
+    return () => clearInterval(interval);
   }, []);
+
+  const handleUpdate = () => {
+      // Clear cache storage if supported
+      if ('caches' in window) {
+          caches.keys().then((names) => {
+              names.forEach((name) => {
+                  caches.delete(name);
+              });
+          });
+      }
+      // Force reload from server
+      window.location.reload();
+  };
 
   const verifyLicense = async (key: string, globalLoader = true) => {
     const cleanKey = key.trim().toUpperCase();
@@ -140,6 +170,27 @@ const App: React.FC = () => {
             currentCredits={0} 
             licenseKey={renewalKey} 
         />
+
+        {/* --- FORCE UPDATE BANNER --- */}
+        {updateAvailable && (
+            <div className="fixed bottom-6 right-6 z-[200] max-w-sm w-full bg-blue-600 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 animate-bounce-subtle border border-blue-400">
+                <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-lg">
+                        <Download className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-sm">Update Available</p>
+                        <p className="text-[10px] text-blue-100 font-mono">v{CURRENT_APP_VERSION} → v{newVersion}</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleUpdate}
+                    className="bg-white text-blue-700 hover:bg-blue-50 px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm whitespace-nowrap flex items-center gap-1"
+                >
+                    <RefreshCw className="w-3 h-3" /> Update
+                </button>
+            </div>
+        )}
     </>
   );
 };

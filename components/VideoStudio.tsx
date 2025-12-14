@@ -213,6 +213,7 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                                     src={vid.url} 
                                     controls 
                                     playsInline
+                                    loop
                                     className="w-full h-full object-contain" 
                                     poster="https://via.placeholder.com/640x360.png?text=Video+Ready"
                                 />
@@ -222,11 +223,10 @@ export const VideoStudio: React.FC<VideoStudioProps> = ({ licenseKey, onBalanceU
                                 <a 
                                     href={vid.url} 
                                     target="_blank"
-                                    rel="noreferrer"
-                                    download={`TAAP-VEO-${Date.now()}.mp4`}
+                                    rel="noopener noreferrer"
                                     className="w-full py-2 bg-white text-black rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors"
                                 >
-                                    <Download className="w-3 h-3" /> Save MP4
+                                    <Download className="w-3 h-3" /> Open / Download MP4
                                 </a>
                             </div>
                         </div>

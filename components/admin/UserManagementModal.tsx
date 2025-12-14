@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { License } from '../../types';
-import { X, Save, AlertTriangle, Loader2, Crown, Wallet, Calendar, Lock } from 'lucide-react';
+import { X, Save, AlertTriangle, Loader2, Crown, Wallet, Calendar, Lock, Key } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 
 interface UserManagementModalProps {
@@ -24,6 +24,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ user, 
             // Ensure numeric values are sent as numbers or null, not empty strings
             const safeFloat = (val: any) => val === '' || val === null ? null : parseFloat(val);
             const safeInt = (val: any) => val === '' || val === null ? 0 : parseInt(val);
+            const safeString = (val: any) => val && val.trim() !== '' ? val.trim() : null;
 
             const { error } = await supabase.rpc('admin_update_user', {
                 p_id: user.id,
@@ -40,11 +41,12 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ user, 
                 p_bank_holder: formData.bank_holder,
                 p_balance: safeFloat(formData.affiliate_balance),
                 p_expiry: formData.subscription_end_date || null,
-                p_affiliate_code: formData.affiliate_code,
-                p_referred_by_code: formData.referred_by_code,
+                p_affiliate_code: safeString(formData.affiliate_code), 
+                p_referred_by_code: safeString(formData.referred_by_code),
                 p_snapshot_discount: safeFloat(formData.snapshot_discount),
                 p_snapshot_commission_rate: safeFloat(formData.snapshot_commission_rate),
-                p_admin_notes: formData.admin_notes
+                p_admin_notes: formData.admin_notes,
+                p_license_key: safeString(formData.license_key) // Passed new license key
             });
 
             if (error) throw error;
@@ -79,6 +81,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ user, 
                     <div className="space-y-4">
                         <h4 className="text-xs font-black text-blue-500 uppercase tracking-widest border-b border-blue-900/30 pb-2 mb-4">Identity & Access</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5 flex items-center gap-2"><Key className="w-3 h-3"/> License Key</label>
+                                <input value={formData.license_key || ''} onChange={e => handleInputChange('license_key', e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white text-sm font-mono focus:border-blue-500 outline-none transition-colors" placeholder="Unique Key" />
+                            </div>
                             <div>
                                 <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5">Full Name</label>
                                 <input value={formData.user_name || ''} onChange={e => handleInputChange('user_name', e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white text-sm focus:border-blue-500 outline-none transition-colors" />

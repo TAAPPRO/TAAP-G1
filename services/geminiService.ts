@@ -69,6 +69,29 @@ const validateApiKey = () => {
     if (!key || key.length < 10) throw new Error("API Key missing.");
 };
 
+// --- ERROR INTERCEPTOR ---
+const handleGeminiError = (err: any) => {
+    const msg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+    
+    // 1. Log REAL Error for Admin Debugging
+    console.error("--- GEMINI API ERROR (INTERNAL) ---");
+    console.error(err);
+    console.error("-----------------------------------");
+
+    // 2. Intercept QUOTA Errors (429)
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota") || msg.includes("limit")) {
+        throw new Error("⚠️ Sistem sedang sibuk (High Load). Sila cuba sebentar lagi.");
+    }
+
+    // 3. Intercept SAFETY Errors
+    if (msg.includes("SAFETY") || msg.includes("blocked") || msg.includes("HarmCategory")) {
+        throw new Error("⚠️ Permintaan ditolak oleh polisi keselamatan AI (Safety Filter). Sila ubah input anda.");
+    }
+
+    // 4. Pass through others (or generic)
+    throw err;
+};
+
 // --- LANGUAGE CONTROLLER ---
 const getLanguageInstruction = (lang: string): string => {
     switch (lang) {
@@ -111,12 +134,8 @@ Negative Prompt: Blurry, distorted, low quality, watermark, text, bad anatomy, u
     }
     
     if (type === 'video') {
-        return `
-Cinematic 4k video shot: ${baseInput}.
-Style: Photorealistic, highly detailed, movie-quality rendering.
-Movement: Smooth camera motion, professional stabilization.
-Lighting: Volumetric lighting, high dynamic range.
-        `.trim();
+        // UNRESTRICTED: Return raw input to prevent style conflicts and safety blocks.
+        return baseInput;
     }
 
     if (type === 'text') {
@@ -233,7 +252,8 @@ export const fixSqlScript = async (currentSql: string, errorMsg: string): Promis
 
         return cleanSql(response.text || currentSql);
     } catch (err: any) {
-        throw new Error("AI Fix Failed: " + err.message);
+        handleGeminiError(err);
+        return currentSql; // Fallback
     }
 };
 
@@ -247,7 +267,10 @@ export const analyzeProductImage = async (image: { base64: string; mimeType: str
       config: { responseMimeType: "application/json", responseSchema: analysisSchema, safetySettings }
     });
     return JSON.parse(cleanJson(response.text || "{}"));
-  } catch (err) { throw new Error("Gagal mengimbas gambar."); }
+  } catch (err) { 
+      handleGeminiError(err); 
+      return {}; 
+  }
 };
 
 export const generateAutofill = async (input: string, key: string, cost: number) => {
@@ -260,7 +283,11 @@ export const generateAutofill = async (input: string, key: string, cost: number)
             config: { responseMimeType: "application/json", responseSchema: autofillSchema }
         });
         return { data: JSON.parse(cleanJson(response.text || "{}")), newBalance };
-    } catch (e) { await secureRefund(key, cost); throw e; }
+    } catch (e) { 
+        await secureRefund(key, cost); 
+        handleGeminiError(e);
+        throw e; // Should not reach here due to handleGeminiError throwing
+    }
 };
 
 export const generateAIImages = async (params: ImageGenerationParams, key: string, cost: number) => {
@@ -304,14 +331,18 @@ export const generateAIImages = async (params: ImageGenerationParams, key: strin
         }
 
         return { images, newBalance };
-    } catch (e) { await secureRefund(key, cost); throw e; }
+    } catch (e) { 
+        await secureRefund(key, cost); 
+        handleGeminiError(e);
+        throw e;
+    }
 };
 
 export const generateAIVideo = async (params: VideoGenerationParams, key: string, cost: number, onProgress: (m: string) => void) => {
   const newBalance = await secureDeduct(key, cost, 'video_generation');
   try {
     onProgress("Connecting to Neural Nodes...");
-    const currentKey = process.env.API_KEY!;
+    const currentKey = (process.env.API_KEY || "").trim();
     
     if (!currentKey) {
         throw new Error("System configuration error: API Key missing.");
@@ -319,11 +350,12 @@ export const generateAIVideo = async (params: VideoGenerationParams, key: string
 
     const aiVideo = new GoogleGenAI({ apiKey: currentKey });
     
-    const finalPrompt = enhancePrompt('video', params.prompt);
+    // DIRECT RAW INPUT: Pass through exactly what user typed
+    const finalPrompt = params.prompt;
     
     // Prepare Video Request
     const request: any = {
-      model: 'veo-3.1-fast-generate-preview',
+      model: 'veo-3.1-fast-generate-preview', // Ensure we use the fast model for better success rate in demos
       prompt: finalPrompt,
       config: { numberOfVideos: 1, resolution: '720p', aspectRatio: params.aspectRatio }
     };
@@ -339,47 +371,52 @@ export const generateAIVideo = async (params: VideoGenerationParams, key: string
     onProgress("Submitting to Veo Engine...");
     let operation = await aiVideo.models.generateVideos(request);
 
-    // Polling Loop
+    // Polling Loop 
     let attempts = 0;
     while (!operation.done) {
-      if (attempts > 30) throw new Error("Video generation timed out."); // 30 * 5s = 150s max
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 5000)); // Reduced to 5s for better feedback
       attempts++;
       onProgress(`Neural Nodes Rendering... (${attempts * 5}s)`);
+      
       operation = await aiVideo.operations.getVideosOperation({ operation: operation });
     }
 
-    const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!uri) throw new Error("Video generation completed but returned no output.");
-
-    onProgress("Downloading Stream...");
-    
-    // HYBRID FETCH STRATEGY:
-    // 1. Try to fetch as blob (Best for user experience, hides API key)
-    // 2. If fetch fails (CORS), return the URI directly so the <video> tag can load it.
-    try {
-        const body = await fetch(`${uri}&key=${currentKey}`);
-        if (!body.ok) throw new Error("Fetch failed");
-        const blob = await body.blob();
-        return { videoUrl: URL.createObjectURL(blob), newBalance, type: 'blob' };
-    } catch (fetchError) {
-        console.warn("Direct video fetch failed (likely CORS), falling back to remote URL.", fetchError);
-        // Fallback: Return the raw signed URL. 
-        // NOTE: This exposes the API key in the HTML source of the <video> tag, 
-        // but it is the only way to make it work if CORS blocks the fetch.
-        return { videoUrl: `${uri}&key=${currentKey}`, newBalance, type: 'remote' };
+    // Check for API-level errors
+    if (operation.error) {
+        throw operation.error; // Will be caught by catch block
     }
+
+    const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!uri) {
+        console.error("Empty Video Response:", operation);
+        throw new Error("Video generation completed but returned no output.");
+    }
+
+    onProgress("Finalizing Stream...");
+    
+    // FIX: Properly handle query parameter separator (?) vs (&)
+    // If the URI already has params, use &, otherwise use ?
+    const separator = uri.includes('?') ? '&' : '?';
+    
+    // SANITIZE: Remove quotes if environment injection failed
+    const safeKey = currentKey.replace(/["']/g, '').trim();
+    
+    const videoUrl = `${uri}${separator}key=${safeKey}`;
+    
+    console.log("Output URL:", videoUrl); // Debug
+
+    return { videoUrl, newBalance, type: 'remote' };
 
   } catch (e) { 
       await secureRefund(key, cost); 
-      console.error("Video Gen Error:", e);
+      handleGeminiError(e);
       throw e; 
   }
 };
 
-export const generateMarketingContent = async (formData: FormData, trends: string, isHuman: boolean, key: string, cost: number) => {
+export const generateMarketingContent = async (formData: FormData, trends: string, isHumanize: boolean, key: string, cost: number) => {
   let newBalance;
-  if (!isHuman) newBalance = await secureDeduct(key, cost, 'text_generation');
+  if (!isHumanize) newBalance = await secureDeduct(key, cost, 'text_generation');
   
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -394,7 +431,7 @@ export const generateMarketingContent = async (formData: FormData, trends: strin
     }
 
     // Use the enhanced prompt generator
-    const finalPrompt = enhancePrompt('text', '', { ...formData, trends, isHuman });
+    const finalPrompt = enhancePrompt('text', '', { ...formData, trends, isHuman: isHumanize });
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -402,7 +439,11 @@ export const generateMarketingContent = async (formData: FormData, trends: strin
       config: config
     });
     return { content: JSON.parse(cleanJson(response.text || "{}")), newBalance };
-  } catch (e) { if(!isHuman) await secureRefund(key, cost); throw e; }
+  } catch (e) { 
+      if(!isHumanize) await secureRefund(key, cost); 
+      handleGeminiError(e);
+      throw e; 
+  }
 };
 
 export const getTrendInsights = async (topic: string) => {

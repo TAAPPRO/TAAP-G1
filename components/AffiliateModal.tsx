@@ -16,12 +16,13 @@ interface LeaderboardEntry {
     affiliate_tier: string;
     total_earnings: number;
     user_name: string;
+    affiliate_code?: string; // Updated to include affiliate_code for anonymous display
 }
 
 interface ReferralEntry {
     joined_at: string;
     user_name: string;
-    affiliate_code?: string; // Updated to include affiliate_code
+    affiliate_code?: string;
     plan_type: string;
     status: string;
     commission_earned: number; 
@@ -116,7 +117,10 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
             { joined_at: new Date().toISOString(), user_name: 'Big Buyer', affiliate_code: 'TAAP-G001', plan_type: 'TAAP PRO', status: 'active', commission_earned: 39.80, snapshot_discount: 5, snapshot_commission_rate: 20, commission_processed: true },
             { joined_at: new Date().toISOString(), user_name: 'Small Buyer', affiliate_code: 'TAAP-G002', plan_type: 'Starter', status: 'pending', commission_earned: 0, snapshot_discount: 0, snapshot_commission_rate: 20, commission_processed: false }
         ]);
-        setPayoutHistory([]); setLedger([]); setLeaderboard([]);
+        setPayoutHistory([]); setLedger([]); 
+        setLeaderboard([
+            { masked_key: '...', user_name: 'Dev', total_earnings: 12500, affiliate_tier: 'Partner', affiliate_code: 'TAAP-DEV1' }
+        ]);
         setIsLoading(false); setIsRefreshing(false);
         return;
     }
@@ -539,9 +543,11 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose,
                                             {leaderboard.slice(0, 5).map((l, i) => (
                                                 <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-orange-50 transition-colors group">
                                                     <div className="flex items-center gap-3 md:gap-4">
-                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${i===0 ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-gray-100 text-gray-500'}`}>{i+1}</div>
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${i===0 ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-gray-100 text-gray-500'}`}>{i+1}</div>
                                                         <div>
-                                                            <p className="text-xs md:text-sm font-bold text-gray-900 font-mono group-hover:text-black transition-colors">{l.masked_key || l.user_name}</p>
+                                                            <p className="text-xs md:text-sm font-bold text-gray-900 font-mono group-hover:text-black transition-colors">
+                                                                {l.affiliate_code || `Member ${i+1}`}
+                                                            </p>
                                                             <p className="text-[10px] font-bold text-gray-400 uppercase">{l.affiliate_tier}</p>
                                                         </div>
                                                     </div>

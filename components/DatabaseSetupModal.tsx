@@ -131,6 +131,14 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='licenses' AND column_name='admin_notes') THEN 
         ALTER TABLE public.licenses ADD COLUMN admin_notes text; 
     END IF;
+    
+    -- Fix: Ensure coupons usage_limit exists
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='coupons' AND column_name='usage_limit') THEN
+        ALTER TABLE public.coupons ADD COLUMN usage_limit integer DEFAULT 100;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='coupons' AND column_name='used_count') THEN
+        ALTER TABLE public.coupons ADD COLUMN used_count integer DEFAULT 0;
+    END IF;
 END $$;
 
 -- 5. HOTFIX: GRANT ACCESS TO SETTINGS IMMEDIATELY
@@ -418,7 +426,7 @@ END;
 $$;
 
 -- 4. UPDATE USER
--- DROP old conflicting signature to fix "cannot change return type" error
+-- DROP old conflicting signatures
 DROP FUNCTION IF EXISTS public.admin_update_user(bigint,text,text,text,text,text,integer,text,numeric,text,text,text,numeric,timestamptz,text,text,numeric,numeric,text);
 
 CREATE OR REPLACE FUNCTION public.admin_update_user(
@@ -440,7 +448,8 @@ CREATE OR REPLACE FUNCTION public.admin_update_user(
     p_referred_by_code text,
     p_snapshot_discount numeric DEFAULT 0,
     p_snapshot_commission_rate numeric DEFAULT 0,
-    p_admin_notes text DEFAULT NULL
+    p_admin_notes text DEFAULT NULL,
+    p_license_key text DEFAULT NULL -- NEW: Allow updating license key
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     UPDATE public.licenses SET
@@ -462,6 +471,7 @@ BEGIN
         snapshot_discount = p_snapshot_discount,
         snapshot_commission_rate = p_snapshot_commission_rate,
         admin_notes = p_admin_notes,
+        license_key = COALESCE(p_license_key, license_key), -- Update License Key if provided
         updated_at = now()
     WHERE id = p_id;
     
@@ -535,10 +545,10 @@ BEGIN
 END;
 $$;
 
--- 8. LEADERBOARD
+-- 8. LEADERBOARD (Updated to return affiliate_code for anonymous display)
 DROP FUNCTION IF EXISTS public.admin_get_affiliate_leaderboard();
-CREATE OR REPLACE FUNCTION public.admin_get_affiliate_leaderboard() RETURNS TABLE (license_key text, user_name text, total_earnings numeric, referral_count integer, affiliate_tier text) LANGUAGE sql SECURITY DEFINER AS $$
-    SELECT license_key, user_name, total_earnings, successful_referrals, affiliate_tier
+CREATE OR REPLACE FUNCTION public.admin_get_affiliate_leaderboard() RETURNS TABLE (license_key text, user_name text, total_earnings numeric, referral_count integer, affiliate_tier text, affiliate_code text) LANGUAGE sql SECURITY DEFINER AS $$
+    SELECT license_key, user_name, total_earnings, successful_referrals, affiliate_tier, affiliate_code
     FROM public.licenses
     WHERE total_earnings > 0
     ORDER BY total_earnings DESC
@@ -593,218 +603,226 @@ $$;
 
 COMMIT;`;
 
-// STEP 4: ADVANCED FEATURES & MISSING RPCs (CRITICAL FIXES)
+// STEP 4: ADVANCED FEATURES (Schema V9.0.31 - Coupons, Monitor & Helpers)
 const DEFAULT_SQL_4 = `BEGIN;
 
--- 1. ADMIN CREATE USER
-CREATE OR REPLACE FUNCTION public.admin_create_user(
-    p_name text,
-    p_email text,
-    p_phone text,
-    p_plan text,
-    p_initial_credits int,
-    p_status text,
-    p_affiliate_code text DEFAULT NULL,
-    p_referred_by_code text DEFAULT NULL
-) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+-- 1. COUPON VERIFICATION
+CREATE OR REPLACE FUNCTION public.verify_coupon(p_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
-    v_new_id bigint;
-    v_key text;
-    v_ac text;
+    v_coupon RECORD;
 BEGIN
-    -- Generate simple key
-    v_key := 'TAAP-' || UPPER(SUBSTRING(MD5(RANDOM()::text) FROM 1 FOR 8)) || '-MANUAL';
+    SELECT * INTO v_coupon FROM public.coupons WHERE code = UPPER(p_code) AND is_active = true;
     
-    INSERT INTO public.licenses (
-        license_key, user_name, user_email, phone_number, plan_type, credits, status, affiliate_code, referred_by_code
-    ) VALUES (
-        v_key, p_name, p_email, p_phone, p_plan, p_initial_credits, p_status, p_affiliate_code, p_referred_by_code
-    ) RETURNING id INTO v_new_id;
-
-    -- Auto-gen affiliate code if missing
-    IF p_affiliate_code IS NULL OR p_affiliate_code = '' THEN
-        v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0'); 
-        UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('status', 'error', 'message', 'Invalid or inactive coupon');
     END IF;
 
-    PERFORM public.log_admin_action('CREATE_USER', v_key, jsonb_build_object('email', p_email, 'mode', 'manual'));
-    RETURN jsonb_build_object('status', 'success', 'license_key', v_key, 'id', v_new_id);
-EXCEPTION WHEN OTHERS THEN
-    RETURN jsonb_build_object('status', 'error', 'message', SQLERRM);
+    IF v_coupon.usage_limit > 0 AND v_coupon.used_count >= v_coupon.usage_limit THEN
+        RETURN jsonb_build_object('status', 'error', 'message', 'Coupon usage limit reached');
+    END IF;
+
+    RETURN jsonb_build_object(
+        'status', 'success',
+        'data', jsonb_build_object(
+            'code', v_coupon.code,
+            'type', v_coupon.discount_type,
+            'value', v_coupon.discount_value
+        )
+    );
 END;
 $$;
 
--- 2. BROADCAST SYSTEM
-CREATE OR REPLACE FUNCTION public.admin_get_broadcasts(p_page int, p_limit int) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE v_data jsonb;
-BEGIN
-    SELECT jsonb_agg(t) INTO v_data FROM (
-        SELECT * FROM public.broadcasts ORDER BY created_at DESC LIMIT p_limit OFFSET (p_page - 1) * p_limit
-    ) t;
-    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb));
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.admin_create_broadcast(p_title text, p_message text, p_type text, p_is_active boolean, p_expires_at timestamptz) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    INSERT INTO public.broadcasts (title, message, type, is_active, expires_at) VALUES (p_title, p_message, p_type, p_is_active, p_expires_at);
-    RETURN jsonb_build_object('status', 'success');
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.admin_delete_broadcast(p_id bigint) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    DELETE FROM public.broadcasts WHERE id = p_id;
-END;
-$$;
-
--- 3. COUPON SYSTEM
+-- 2. ADMIN MANAGE COUPON
 CREATE OR REPLACE FUNCTION public.admin_manage_coupon(
-    p_action text, -- 'create' or 'delete'
+    p_action text,
     p_id bigint,
     p_code text,
     p_value numeric,
     p_type text,
-    p_limit int
+    p_limit integer
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     IF p_action = 'create' THEN
-        INSERT INTO public.coupons (code, discount_value, discount_type, usage_limit) VALUES (p_code, p_value, p_type, p_limit);
+        INSERT INTO public.coupons (code, discount_value, discount_type, usage_limit, is_active)
+        VALUES (p_code, p_value, p_type, p_limit, true);
     ELSIF p_action = 'delete' THEN
         DELETE FROM public.coupons WHERE id = p_id;
     END IF;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.verify_coupon(p_code text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE v_coupon RECORD;
-BEGIN
-    SELECT * INTO v_coupon FROM public.coupons WHERE code = p_code AND is_active = true;
-    
-    IF NOT FOUND THEN RETURN jsonb_build_object('status', 'error', 'message', 'Invalid Coupon'); END IF;
-    IF v_coupon.used_count >= v_coupon.usage_limit THEN RETURN jsonb_build_object('status', 'error', 'message', 'Coupon Limit Reached'); END IF;
-    
-    RETURN jsonb_build_object('status', 'success', 'data', row_to_json(v_coupon));
-END;
-$$;
-
--- 4. FINANCE & AFFILIATE EXTRAS
-CREATE OR REPLACE FUNCTION public.admin_adjust_balance(p_license_key text, p_amount numeric, p_is_bonus boolean, p_reason text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE v_final_amount numeric;
-BEGIN
-    v_final_amount := CASE WHEN p_is_bonus THEN p_amount ELSE -p_amount END;
-    
-    UPDATE public.licenses SET affiliate_balance = affiliate_balance + v_final_amount WHERE license_key = p_license_key;
-    
-    INSERT INTO public.affiliate_logs (license_key, amount, type, description) 
-    VALUES (p_license_key, v_final_amount, CASE WHEN p_is_bonus THEN 'bonus' ELSE 'deduction' END, p_reason);
-    
-    PERFORM public.log_admin_action('ADJUST_BALANCE', p_license_key, jsonb_build_object('amount', v_final_amount, 'reason', p_reason));
-    RETURN jsonb_build_object('status', 'success');
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.update_bank_details(p_license_key text, p_bank text, p_acc text, p_holder text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    UPDATE public.licenses SET bank_name = p_bank, bank_details = p_acc, bank_holder = p_holder WHERE license_key = p_license_key;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.check_affiliate_code(p_code text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    RETURN EXISTS(SELECT 1 FROM public.licenses WHERE affiliate_code = p_code AND status = 'active');
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.check_expired_subscriptions() RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    UPDATE public.licenses SET status = 'suspended' WHERE subscription_end_date < now() AND status = 'active';
-END;
-$$;
-
--- 5. GLOBAL MONITOR ANALYTICS
-CREATE OR REPLACE FUNCTION public.admin_get_global_referrals(p_page int, p_limit int, p_search text DEFAULT NULL) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE 
+-- 3. GLOBAL REFERRAL MONITOR
+CREATE OR REPLACE FUNCTION public.admin_get_global_referrals(
+    p_page integer,
+    p_limit integer,
+    p_search text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_offset integer;
+    v_total integer;
     v_data jsonb;
-    v_total int;
-    v_offset int := (p_page - 1) * p_limit;
 BEGIN
-    SELECT COUNT(*) INTO v_total FROM public.licenses l JOIN public.licenses u ON l.referred_by_code = u.affiliate_code 
-    WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR u.user_name ILIKE '%'||p_search||'%');
+    v_offset := (p_page - 1) * p_limit;
 
-    SELECT jsonb_agg(t) INTO v_data FROM (
+    -- Count
+    SELECT COUNT(*) INTO v_total
+    FROM public.licenses l
+    JOIN public.licenses r ON l.referred_by_code = r.affiliate_code
+    WHERE (p_search IS NULL OR l.user_name ILIKE '%' || p_search || '%' OR r.user_name ILIKE '%' || p_search || '%');
+
+    -- Data
+    SELECT jsonb_agg(t) INTO v_data
+    FROM (
         SELECT 
             l.created_at,
+            l.status,
             l.user_name as referee_name,
             l.plan_type,
-            l.status,
             COALESCE(l.snapshot_discount, 0) as snapshot_discount,
-            u.user_name as referrer_name,
-            u.affiliate_code as referrer_code,
-            u.affiliate_tier as referrer_tier,
-            -- Financials
-            (SELECT price FROM public.packages WHERE name = l.plan_type LIMIT 1) as base_price,
-            (SELECT SUM(amount) FROM public.affiliate_logs WHERE from_user = l.user_name AND type='commission') as commission_paid,
-            -- Estimates
-            CASE 
-                WHEN l.plan_type = 'TAAP PRO' THEN 199 
-                ELSE 69 
-            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0) as final_sale_amount,
-            
-            (CASE 
-                WHEN l.plan_type = 'TAAP PRO' THEN 199 
-                ELSE 69 
-            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) * 
-            (COALESCE(l.snapshot_commission_rate, (CASE WHEN u.affiliate_tier='Partner' THEN 20 WHEN u.affiliate_tier='Super Agent' THEN 15 ELSE 10 END)) / 100.0) as estimated_commission,
-            
-            -- Net Profit (Sale - Commission)
-            (CASE 
-                WHEN l.plan_type = 'TAAP PRO' THEN 199 
-                ELSE 69 
-            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) - 
-            ((CASE 
-                WHEN l.plan_type = 'TAAP PRO' THEN 199 
-                ELSE 69 
-            END * ((100 - COALESCE(l.snapshot_discount, 0)) / 100.0)) * 
-            (COALESCE(l.snapshot_commission_rate, (CASE WHEN u.affiliate_tier='Partner' THEN 20 WHEN u.affiliate_tier='Super Agent' THEN 15 ELSE 10 END)) / 100.0)) as admin_net_profit,
-            
-            l.commission_processed
-            
+            r.user_name as referrer_name,
+            r.affiliate_code as referrer_code,
+            r.affiliate_tier as referrer_tier,
+            (SELECT price FROM public.packages WHERE name = l.plan_type LIMIT 1) as final_sale_amount,
+            (SELECT SUM(amount) FROM public.affiliate_logs WHERE from_user = l.user_name AND type = 'commission') as commission_paid,
+            l.commission_processed,
+            0 as estimated_commission,
+            0 as admin_net_profit
         FROM public.licenses l
-        JOIN public.licenses u ON l.referred_by_code = u.affiliate_code
-        WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR u.user_name ILIKE '%'||p_search||'%')
+        JOIN public.licenses r ON l.referred_by_code = r.affiliate_code
+        WHERE (p_search IS NULL OR l.user_name ILIKE '%' || p_search || '%' OR r.user_name ILIKE '%' || p_search || '%')
         ORDER BY l.created_at DESC
         LIMIT p_limit OFFSET v_offset
     ) t;
 
-    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb), 'total', v_total);
+    RETURN jsonb_build_object(
+        'data', COALESCE(v_data, '[]'::jsonb),
+        'total', v_total
+    );
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.admin_get_global_ledger(p_page int, p_limit int, p_search text DEFAULT NULL, p_type text DEFAULT NULL) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE 
+-- 4. GLOBAL LEDGER MONITOR
+CREATE OR REPLACE FUNCTION public.admin_get_global_ledger(
+    p_page integer,
+    p_limit integer,
+    p_search text,
+    p_type text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_offset integer;
+    v_total integer;
     v_data jsonb;
-    v_total int;
-    v_offset int := (p_page - 1) * p_limit;
 BEGIN
-    SELECT COUNT(*) INTO v_total FROM public.affiliate_logs al 
+    v_offset := (p_page - 1) * p_limit;
+
+    SELECT COUNT(*) INTO v_total
+    FROM public.affiliate_logs al
     LEFT JOIN public.licenses l ON al.license_key = l.license_key
-    WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR al.description ILIKE '%'||p_search||'%')
+    WHERE (p_search IS NULL OR l.user_name ILIKE '%' || p_search || '%' OR al.description ILIKE '%' || p_search || '%')
     AND (p_type IS NULL OR al.type = p_type);
 
-    SELECT jsonb_agg(t) INTO v_data FROM (
-        SELECT al.*, l.user_name 
+    SELECT jsonb_agg(t) INTO v_data
+    FROM (
+        SELECT 
+            al.created_at,
+            l.user_name,
+            l.license_key,
+            al.type,
+            al.description,
+            al.amount
         FROM public.affiliate_logs al
         LEFT JOIN public.licenses l ON al.license_key = l.license_key
-        WHERE (p_search IS NULL OR l.user_name ILIKE '%'||p_search||'%' OR al.description ILIKE '%'||p_search||'%')
+        WHERE (p_search IS NULL OR l.user_name ILIKE '%' || p_search || '%' OR al.description ILIKE '%' || p_search || '%')
         AND (p_type IS NULL OR al.type = p_type)
         ORDER BY al.created_at DESC
         LIMIT p_limit OFFSET v_offset
     ) t;
 
-    RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb), 'total', v_total);
+    RETURN jsonb_build_object(
+        'data', COALESCE(v_data, '[]'::jsonb),
+        'total', v_total
+    );
 END;
 $$;
+
+-- 5. ADMIN ADJUST BALANCE
+CREATE OR REPLACE FUNCTION public.admin_adjust_balance(
+    p_license_key text,
+    p_amount numeric,
+    p_is_bonus boolean,
+    p_reason text
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF p_is_bonus THEN
+        UPDATE public.licenses SET affiliate_balance = affiliate_balance + p_amount, total_earnings = total_earnings + p_amount WHERE license_key = p_license_key;
+        INSERT INTO public.affiliate_logs (license_key, amount, type, description) VALUES (p_license_key, p_amount, 'bonus', p_reason);
+    ELSE
+        UPDATE public.licenses SET affiliate_balance = affiliate_balance - p_amount WHERE license_key = p_license_key;
+        INSERT INTO public.affiliate_logs (license_key, amount, type, description) VALUES (p_license_key, -p_amount, 'deduction', p_reason);
+    END IF;
+    PERFORM public.log_admin_action('ADJUST_BALANCE', p_license_key, jsonb_build_object('amount', p_amount, 'type', CASE WHEN p_is_bonus THEN 'bonus' ELSE 'deduction' END, 'reason', p_reason));
+END;
+$$;
+
+-- 6. ADMIN CREATE USER
+CREATE OR REPLACE FUNCTION public.admin_create_user(
+    p_name text,
+    p_email text,
+    p_phone text,
+    p_plan text,
+    p_initial_credits integer,
+    p_status text,
+    p_affiliate_code text DEFAULT NULL,
+    p_referred_by_code text DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_new_key text;
+    v_new_id bigint;
+    v_ac text;
+BEGIN
+    v_new_key := 'TAAP-' || UPPER(SUBSTRING(MD5(RANDOM()::text) FROM 1 FOR 4)) || '-' || UPPER(SUBSTRING(MD5(RANDOM()::text) FROM 1 FOR 4)) || '-2025';
+    
+    INSERT INTO public.licenses (
+        license_key, user_name, user_email, phone_number, plan_type, credits, status, affiliate_code, referred_by_code
+    ) VALUES (
+        v_new_key, p_name, p_email, p_phone, p_plan, p_initial_credits, p_status, p_affiliate_code, p_referred_by_code
+    ) RETURNING id INTO v_new_id;
+
+    IF p_affiliate_code IS NULL OR p_affiliate_code = '' THEN
+        v_ac := 'TAAP-G' || LPAD(v_new_id::text, 4, '0');
+        UPDATE public.licenses SET affiliate_code = v_ac WHERE id = v_new_id;
+    END IF;
+
+    PERFORM public.log_admin_action('ADMIN_CREATE_USER', v_new_key, jsonb_build_object('email', p_email));
+    
+    RETURN jsonb_build_object('status', 'success', 'license_key', v_new_key);
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('status', 'error', 'message', SQLERRM);
+END;
+$$;
+
+-- 7. HELPERS
+CREATE OR REPLACE FUNCTION public.update_bank_details(p_license_key text, p_bank text, p_acc text, p_holder text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN UPDATE public.licenses SET bank_name = p_bank, bank_details = p_acc, bank_holder = p_holder WHERE license_key = p_license_key; END; $$;
+
+CREATE OR REPLACE FUNCTION public.check_affiliate_code(p_code text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN PERFORM 1 FROM public.licenses WHERE affiliate_code = p_code AND status = 'active'; RETURN FOUND; END; $$;
+
+CREATE OR REPLACE FUNCTION public.admin_get_broadcasts(p_page int, p_limit int) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_data jsonb;
+BEGIN SELECT jsonb_agg(t) INTO v_data FROM (SELECT * FROM public.broadcasts ORDER BY created_at DESC LIMIT p_limit OFFSET (p_page - 1) * p_limit) t; RETURN jsonb_build_object('data', COALESCE(v_data, '[]'::jsonb)); END; $$;
+
+CREATE OR REPLACE FUNCTION public.admin_create_broadcast(p_title text, p_message text, p_type text, p_is_active boolean, p_expires_at timestamptz) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN INSERT INTO public.broadcasts (title, message, type, is_active, expires_at) VALUES (p_title, p_message, p_type, p_is_active, p_expires_at); END; $$;
+
+CREATE OR REPLACE FUNCTION public.admin_delete_broadcast(p_id bigint) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN DELETE FROM public.broadcasts WHERE id = p_id; END; $$;
+
+CREATE OR REPLACE FUNCTION public.check_expired_subscriptions() RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN UPDATE public.licenses SET status = 'suspended' WHERE status = 'active' AND subscription_end_date < now(); END; $$;
+
+CREATE OR REPLACE FUNCTION public.refund_credits(p_license_key text, p_amount int) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN UPDATE public.licenses SET credits = credits + p_amount WHERE license_key = p_license_key; END; $$;
 
 COMMIT;`;
 
